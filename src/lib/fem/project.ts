@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { polygonGeometry, rectangleGeometry } from './geometry'
 import { defaultModel, type HeatModel } from './types'
 
 const thermalBoundarySchema = z.discriminatedUnion('type', [
@@ -14,6 +15,11 @@ const structuralBoundarySchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('normalDisplacement'), value: z.number().min(-1000).max(1000) }),
 ])
 const geometrySchema = z.object({ width: z.number().positive().max(1000), height: z.number().positive().max(1000) })
+const vertexSchema = z.object({ x: z.number().finite().min(0).max(1000), y: z.number().finite().min(0).max(1000) })
+const geometryV5Schema = z.discriminatedUnion('shape', [
+  geometrySchema.extend({ shape: z.literal('rectangle'), vertices: z.array(vertexSchema).length(4) }),
+  geometrySchema.extend({ shape: z.literal('polygon'), vertices: z.array(vertexSchema).min(3).max(256) }),
+])
 const thermalPhysicsSchema = z.object({
   heatSource: z.number().min(-1e12).max(1e12),
   leftTemperature: z.number().min(-273.15).max(10000),
@@ -29,6 +35,7 @@ const electrostaticsSchema = z.object({
   bottom: electricBoundarySchema,
 })
 const meshSchema = z.object({ nx: z.number().int().min(2).max(80), ny: z.number().int().min(2).max(80) })
+const meshV5Schema = meshSchema.extend({ refinement: z.number().int().min(0).max(5) })
 const linearSolverSchema = z.object({
   tolerance: z.number().min(1e-12).max(1e-3),
   maxIterations: z.number().int().min(10).max(20000),
@@ -69,7 +76,7 @@ const v3ModelSchema = z.object({
 })
 type V3Model = z.infer<typeof v3ModelSchema>
 
-export const heatModelSchema = z.object({
+const v4ModelObject = z.object({
   schemaVersion: z.literal(4),
   name: z.string().trim().min(1).max(120),
   activePhysics: z.enum(['heat', 'electrostatics', 'elasticity']),
@@ -95,9 +102,31 @@ export const heatModelSchema = z.object({
     values: z.array(z.number().finite()).min(2).max(12),
   }),
   convergence: convergenceSchema,
+})
+const v4ModelSchema = v4ModelObject.superRefine((model, context) => {
+  if (model.study.type === 'transient' && model.activePhysics !== 'heat') context.addIssue({ code: 'custom', message: 'Transient studies currently require Heat Transfer.' })
+})
+type V4Model = z.infer<typeof v4ModelSchema>
+
+export const heatModelSchema = v4ModelObject.extend({
+  schemaVersion: z.literal(5), geometry: geometryV5Schema, mesh: meshV5Schema,
 }).superRefine((model, context) => {
-  if (model.study.type === 'transient' && model.activePhysics !== 'heat') {
-    context.addIssue({ code: 'custom', message: 'Transient studies currently require Heat Transfer.' })
+  if (model.study.type === 'transient' && model.activePhysics !== 'heat') context.addIssue({ code: 'custom', message: 'Transient studies currently require Heat Transfer.' })
+  const tolerance = Math.max(model.geometry.width, model.geometry.height) * 1e-9
+  if (model.geometry.shape === 'rectangle') {
+    const expected = rectangleGeometry(model.geometry.width, model.geometry.height)
+    if (model.geometry.vertices.some((vertex, index) => Math.abs(vertex.x - expected.vertices[index]!.x) > tolerance || Math.abs(vertex.y - expected.vertices[index]!.y) > tolerance)) {
+      context.addIssue({ code: 'custom', message: 'Rectangle vertices must match its width and height.' })
+    }
+  } else {
+    try {
+      const normalized = polygonGeometry(model.geometry.vertices)
+      if (Math.abs(normalized.width - model.geometry.width) > tolerance || Math.abs(normalized.height - model.geometry.height) > tolerance) {
+        context.addIssue({ code: 'custom', message: 'Polygon width and height must match its bounding box.' })
+      }
+    } catch (error) {
+      context.addIssue({ code: 'custom', message: error instanceof Error ? error.message : 'Invalid polygon geometry.' })
+    }
   }
 })
 
@@ -111,11 +140,19 @@ function migrateV2(model: z.infer<typeof v2ModelSchema>): V3Model {
   }
 }
 
-function migrateV3(model: V3Model): HeatModel {
+function migrateV3(model: V3Model): V4Model {
   return {
     ...model, schemaVersion: 4,
     material: { ...model.material, youngsModulus: defaultModel.material.youngsModulus, poissonRatio: defaultModel.material.poissonRatio },
     elasticity: structuredClone(defaultModel.elasticity),
+  }
+}
+
+function migrateV4(model: V4Model): HeatModel {
+  return {
+    ...model, schemaVersion: 5,
+    geometry: rectangleGeometry(model.geometry.width, model.geometry.height),
+    mesh: { ...model.mesh, refinement: 1 },
   }
 }
 
@@ -124,23 +161,22 @@ export function parseProjectJson(source: string): HeatModel {
   if (typeof json === 'object' && json !== null && 'schemaVersion' in json) {
     if (json.schemaVersion === 1) {
       const legacy = legacyModelSchema.parse(json)
-      return migrateV3(migrateV2({
+      return migrateV4(migrateV3(migrateV2({
         ...legacy, schemaVersion: 2, activePhysics: 'heat',
         material: { ...legacy.material, relativePermittivity: 1 },
         electrostatics: structuredClone(defaultModel.electrostatics), convergence: { levels: 3 },
-      }))
+      })))
     }
-    if (json.schemaVersion === 2) return migrateV3(migrateV2(v2ModelSchema.parse(json)))
-    if (json.schemaVersion === 3) return migrateV3(v3ModelSchema.parse(json))
+    if (json.schemaVersion === 2) return migrateV4(migrateV3(migrateV2(v2ModelSchema.parse(json))))
+    if (json.schemaVersion === 3) return migrateV4(migrateV3(v3ModelSchema.parse(json)))
+    if (json.schemaVersion === 4) return migrateV4(v4ModelSchema.parse(json))
   }
   return heatModelSchema.parse(json)
 }
 
 function canonical(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonical)
-  if (typeof value === 'object' && value !== null) {
-    return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, canonical(item)]))
-  }
+  if (typeof value === 'object' && value !== null) return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, canonical(item)]))
   return value
 }
 

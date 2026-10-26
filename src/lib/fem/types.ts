@@ -28,12 +28,14 @@ export type SweepParameter =
   | 'electrostatics.chargeDensity'
 
 export interface HeatModel {
-  schemaVersion: 4
+  schemaVersion: 5
   name: string
   activePhysics: ActivePhysics
   geometry: {
+    shape: 'rectangle' | 'polygon'
     width: number
     height: number
+    vertices: MeshNode[]
   }
   material: {
     conductivity: number
@@ -69,6 +71,7 @@ export interface HeatModel {
   mesh: {
     nx: number
     ny: number
+    refinement?: number
   }
   study: {
     type: StudyType
@@ -97,14 +100,27 @@ export interface MeshNode {
 
 export type Triangle = [number, number, number]
 
-export interface RectangularMesh {
+export interface BaseMesh {
+  kind: 'mapped' | 'unstructured'
   nodes: MeshNode[]
   triangles: Triangle[]
-  nx: number
-  ny: number
   width: number
   height: number
+  centroid: MeshNode
+  refinement: number
 }
+
+export interface RectangularMesh extends BaseMesh {
+  kind: 'mapped'
+  nx: number
+  ny: number
+}
+
+export interface UnstructuredMesh extends BaseMesh {
+  kind: 'unstructured'
+}
+
+export type Mesh = RectangularMesh | UnstructuredMesh
 
 export interface VectorValue {
   x: number
@@ -121,7 +137,7 @@ export interface TensorValue {
 export type HeatFlux = VectorValue
 
 export interface BaseSimulationResult {
-  mesh: RectangularMesh
+  mesh: Mesh
   converged: boolean
   iterations: number
   relativeResidual: number
@@ -169,8 +185,10 @@ export type AnySimulationResult = SimulationResult | ElectricSimulationResult | 
 
 export interface ConvergenceEntry {
   level: number
+  grid: string
   nx: number
   ny: number
+  refinement: number
   nodes: number
   elementSize: number
   iterations: number
@@ -191,10 +209,10 @@ export interface ConvergenceReport {
 }
 
 export const defaultModel: HeatModel = {
-  schemaVersion: 4,
+  schemaVersion: 5,
   name: 'Thermal plate study',
   activePhysics: 'heat',
-  geometry: { width: 0.1, height: 0.05 },
+  geometry: { shape: 'rectangle', width: 0.1, height: 0.05, vertices: [{ x: 0, y: 0 }, { x: 0.1, y: 0 }, { x: 0.1, y: 0.05 }, { x: 0, y: 0.05 }] },
   material: {
     conductivity: 45, relativePermittivity: 1, density: 7850, heatCapacity: 475,
     youngsModulus: 200e9, poissonRatio: 0.3,
@@ -222,7 +240,7 @@ export const defaultModel: HeatModel = {
     top: { type: 'free' },
     bottom: { type: 'roller' },
   },
-  mesh: { nx: 28, ny: 16 },
+  mesh: { nx: 28, ny: 16, refinement: 1 },
   study: { type: 'stationary', tolerance: 1e-9, maxIterations: 2000 },
   transient: { initialTemperature: 20, duration: 10, timeSteps: 100, outputSteps: 20 },
   sweep: { parameter: 'material.conductivity', values: [15, 45, 100] },

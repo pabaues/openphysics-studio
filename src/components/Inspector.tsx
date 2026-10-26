@@ -1,5 +1,6 @@
-import { Download, FileJson, FileText, Info, LoaderCircle, Play, ShieldCheck, TrendingUp } from 'lucide-react'
+import { Download, FileJson, FileText, FileUp, Info, LoaderCircle, Play, ShieldCheck, TrendingUp } from 'lucide-react'
 import type { NodeId } from './ModelTree'
+import { rectangleGeometry, signedPolygonArea } from '@/lib/fem/geometry'
 import { sweepParameters } from '@/lib/fem/sweep'
 import type { AnySimulationResult, BoundaryCondition, ElectricBoundaryCondition, HeatModel, StructuralBoundaryCondition, SweepParameter } from '@/lib/fem/types'
 
@@ -10,6 +11,7 @@ interface InspectorProps {
   stale: boolean
   converging: boolean
   onChange: (model: HeatModel) => void
+  onImportGeometry: (file: File) => void
   onExport: (format: 'csv' | 'vtk' | 'json' | 'derived' | 'html' | 'sweep') => void
   onRunConvergence: () => void
   onRunSweep: () => void
@@ -58,7 +60,7 @@ function StructuralBoundary({ condition, onChange }: { condition: StructuralBoun
   </>
 }
 
-export function Inspector({ model, selected, result, stale, converging, onChange, onExport, onRunConvergence, onRunSweep }: InspectorProps) {
+export function Inspector({ model, selected, result, stale, converging, onChange, onImportGeometry, onExport, onRunConvergence, onRunSweep }: InspectorProps) {
   const updatePhysics = (patch: Partial<HeatModel['physics']>) => onChange({ ...model, activePhysics: 'heat', physics: { ...model.physics, ...patch } })
   const updateElectric = (patch: Partial<HeatModel['electrostatics']>) => onChange({ ...model, activePhysics: 'electrostatics', electrostatics: { ...model.electrostatics, ...patch } })
   const updateStructural = (patch: Partial<HeatModel['elasticity']>) => onChange({ ...model, activePhysics: 'elasticity', study: { ...model.study, type: 'stationary' }, elasticity: { ...model.elasticity, ...patch } })
@@ -66,17 +68,38 @@ export function Inspector({ model, selected, result, stale, converging, onChange
   const structuralBoundary = selected.replace('structural', '').toLowerCase() as 'left' | 'right' | 'top' | 'bottom'
   const isElectricBoundary = selected.startsWith('electric')
   const isStructuralBoundary = selected.startsWith('structural')
+  const isPolygon = model.geometry.shape === 'polygon'
   const resultName = result?.physics === 'electrostatics' ? 'potential' : result?.physics === 'elasticity' ? 'displacement' : 'temperature'
   const finestDivisions = Math.max(model.mesh.nx, model.mesh.ny) * 2 ** (model.convergence.levels - 1)
+  const baseRefinement = model.mesh.refinement ?? 1
+  const finestRefinement = baseRefinement + model.convergence.levels - 1
+  const estimatedTriangles = (model.geometry.vertices.length - 2) * 4 ** finestRefinement
+  const convergenceTooLarge = isPolygon ? finestRefinement > 5 || estimatedTriangles > 100000 : finestDivisions > 128
+  const geometryImport = <label className="study-button geometry-import"><FileUp size={15} />Import SVG or CSV<input aria-label="Geometry file" type="file" accept=".svg,.csv" hidden onChange={(event) => {
+    const file = event.target.files?.[0]
+    if (file) onImportGeometry(file)
+    event.target.value = ''
+  }} /></label>
 
   return (
     <aside className="inspector" aria-label="Settings">
       <div className="panel-heading"><span>Settings</span><Info size={14} /></div>
       <div className="inspector-scroll">
-        {selected === 'geometry' && <Section eyebrow="Geometry sequence" title="Parametric rectangle" description="Dimensions propagate to the mesh and every subsequent study.">
-          <NumberField label="Width" value={model.geometry.width} unit="m" min={0.001} max={1000} step={0.01} onChange={(width) => onChange({ ...model, geometry: { ...model.geometry, width } })} />
-          <NumberField label="Height" value={model.geometry.height} unit="m" min={0.001} max={1000} step={0.01} onChange={(height) => onChange({ ...model, geometry: { ...model.geometry, height } })} />
-          <div className="selection-card"><span className="selection-dot" />Domain 1 selected<strong>1 domain · 4 boundaries</strong></div>
+        {selected === 'geometry' && <Section eyebrow="Geometry sequence" title={isPolygon ? 'Simple polygon' : 'Parametric rectangle'} description={isPolygon ? 'An imported 2D boundary, normalized to Cartesian coordinates in metres.' : 'Dimensions propagate to the mesh and every subsequent study.'}>
+          {!isPolygon && <>
+            <NumberField label="Width" value={model.geometry.width} unit="m" min={0.001} max={1000} step={0.01} onChange={(width) => onChange({ ...model, geometry: rectangleGeometry(width, model.geometry.height) })} />
+            <NumberField label="Height" value={model.geometry.height} unit="m" min={0.001} max={1000} step={0.01} onChange={(height) => onChange({ ...model, geometry: rectangleGeometry(model.geometry.width, height) })} />
+          </>}
+          {isPolygon && <>
+            <div className="property-row"><span>Boundary vertices</span><strong>{model.geometry.vertices.length}</strong></div>
+            <div className="property-row"><span>Bounding box</span><strong>{model.geometry.width.toPrecision(4)} × {model.geometry.height.toPrecision(4)} m</strong></div>
+            <div className="property-row"><span>Domain area</span><strong>{signedPolygonArea(model.geometry.vertices).toPrecision(5)} m²</strong></div>
+            <button className="export-button" onClick={() => onChange({ ...model, geometry: rectangleGeometry(model.geometry.width, model.geometry.height) })}>Use parametric rectangle</button>
+          </>}
+          {geometryImport}
+          <div className="selection-card"><span className="selection-dot" />Domain 1 selected<strong>1 domain · {model.geometry.vertices.length} boundary segments</strong></div>
+          {isPolygon && <div className="solver-note neutral"><Info size={16} /><span>CSV: x,y rows. SVG: one polygon, polyline or linear path (M/L/H/V/Z). SVG Y is inverted; curves, holes and multiple subpaths are not supported.</span></div>}
+          {isPolygon && <div className="solver-note neutral"><Info size={16} /><span>Named conditions apply at the bounding-box extrema. Every other polygon edge keeps its natural boundary condition.</span></div>}
         </Section>}
 
         {selected === 'material' && <Section eyebrow="Materials" title="Isotropic solid" description="Constant properties shared by the available physics interfaces.">
@@ -126,10 +149,18 @@ export function Inspector({ model, selected, result, stale, converging, onChange
           <StructuralBoundary condition={model.elasticity[structuralBoundary]} onChange={(condition) => updateStructural({ [structuralBoundary]: condition })} />
         </Section>}
 
-        {selected === 'mesh' && <Section eyebrow="Mesh sequence" title="Mapped triangles" description="A structured grid split into first-order triangular finite elements.">
-          <label className="field-label"><span>Horizontal divisions <b>{model.mesh.nx}</b></span><input type="range" min="4" max="64" step="2" value={model.mesh.nx} onChange={(e) => onChange({ ...model, mesh: { ...model.mesh, nx: Number(e.target.value) } })} /></label>
-          <label className="field-label"><span>Vertical divisions <b>{model.mesh.ny}</b></span><input type="range" min="4" max="64" step="2" value={model.mesh.ny} onChange={(e) => onChange({ ...model, mesh: { ...model.mesh, ny: Number(e.target.value) } })} /></label>
-          <div className="mesh-summary"><strong>{((model.mesh.nx + 1) * (model.mesh.ny + 1)).toLocaleString()}</strong><span>nodes</span><strong>{(2 * model.mesh.nx * model.mesh.ny).toLocaleString()}</strong><span>triangles</span></div>
+        {selected === 'mesh' && <Section eyebrow="Mesh sequence" title={isPolygon ? 'Unstructured triangles' : 'Mapped triangles'} description={isPolygon ? 'Earcut triangulation followed by nested one-to-four red refinement.' : 'A structured grid split into first-order triangular finite elements.'}>
+          {!isPolygon && <>
+            <label className="field-label"><span>Horizontal divisions <b>{model.mesh.nx}</b></span><input type="range" min="4" max="64" step="2" value={model.mesh.nx} onChange={(e) => onChange({ ...model, mesh: { ...model.mesh, nx: Number(e.target.value) } })} /></label>
+            <label className="field-label"><span>Vertical divisions <b>{model.mesh.ny}</b></span><input type="range" min="4" max="64" step="2" value={model.mesh.ny} onChange={(e) => onChange({ ...model, mesh: { ...model.mesh, ny: Number(e.target.value) } })} /></label>
+            <div className="mesh-summary"><strong>{((model.mesh.nx + 1) * (model.mesh.ny + 1)).toLocaleString()}</strong><span>nodes</span><strong>{(2 * model.mesh.nx * model.mesh.ny).toLocaleString()}</strong><span>triangles</span></div>
+          </>}
+          {isPolygon && <>
+            <label className="field-label"><span>Refinement level <b>R{baseRefinement}</b></span><input aria-label="Polygon refinement" type="range" min="0" max="4" step="1" value={baseRefinement} onChange={(event) => onChange({ ...model, mesh: { ...model.mesh, refinement: Number(event.target.value) } })} /></label>
+            <div className="mesh-summary"><strong>{model.geometry.vertices.length}</strong><span>boundary vertices</span><strong>{((model.geometry.vertices.length - 2) * 4 ** baseRefinement).toLocaleString()}</strong><span>triangles</span></div>
+            <div className="property-row"><span>Element size</span><strong>h ÷ 2 per level</strong></div>
+            <div className="solver-note neutral"><ShieldCheck size={16} /><span>Red refinement preserves coarse node indices, enabling direct nested-grid convergence comparisons.</span></div>
+          </>}
         </Section>}
 
         {selected === 'study' && <Section eyebrow="Study 1" title={model.study.type === 'transient' ? 'Transient solver' : 'Stationary solver'} description="Sparse systems solved with Jacobi-preconditioned conjugate gradients and reported residuals.">
@@ -150,22 +181,22 @@ export function Inspector({ model, selected, result, stale, converging, onChange
         </Section>}
 
         {selected === 'sweep' && <Section eyebrow="Study 1 · Automation" title="Parametric sweep" description="Solve independent model copies for 2–12 values and compare derived quantities.">
-          <label className="field-label"><span>Parameter</span><select aria-label="Sweep parameter" value={model.sweep.parameter} onChange={(event) => onChange({ ...model, sweep: { ...model.sweep, parameter: event.target.value as SweepParameter } })}>{Object.entries(sweepParameters).filter(([, metadata]) => metadata.physics === 'both' || metadata.physics === model.activePhysics).map(([parameter, metadata]) => <option key={parameter} value={parameter}>{metadata.label}</option>)}</select></label>
+          <label className="field-label"><span>Parameter</span><select aria-label="Sweep parameter" value={model.sweep.parameter} onChange={(event) => onChange({ ...model, sweep: { ...model.sweep, parameter: event.target.value as SweepParameter } })}>{Object.entries(sweepParameters).filter(([parameter, metadata]) => (!isPolygon || !parameter.startsWith('geometry.')) && (metadata.physics === 'both' || metadata.physics === model.activePhysics)).map(([parameter, metadata]) => <option key={parameter} value={parameter}>{metadata.label}</option>)}</select></label>
           <label className="field-label"><span>Values · comma separated</span><input key={`${model.sweep.parameter}-${model.sweep.values.join(',')}`} aria-label="Sweep values" className="text-field" defaultValue={model.sweep.values.join(', ')} onBlur={(event) => {
             const values = event.target.value.split(',').map((value) => Number(value.trim())).filter((value) => Number.isFinite(value))
             onChange({ ...model, sweep: { ...model.sweep, values } })
           }} /></label>
           <div className="property-row"><span>Selected parameter</span><strong>{sweepParameters[model.sweep.parameter].unit || 'dimensionless'}</strong></div>
           <button className="study-button" disabled={converging} onClick={onRunSweep}><Play size={15} />Run parametric sweep</button>
-          <div className="solver-note neutral"><ShieldCheck size={16} /><span>Every case is schema-validated and solved independently. Select a result row to inspect its field.</span></div>
+          <div className="solver-note neutral"><ShieldCheck size={16} /><span>{isPolygon ? 'Bounding-box sweeps are unavailable for polygons; material and physics parameters remain available.' : 'Every case is schema-validated and solved independently. Select a result row to inspect its field.'}</span></div>
         </Section>}
 
-        {selected === 'convergence' && <Section eyebrow="Study 1 · Automation" title="Mesh convergence" description="Solve successively refined ×2 grids and estimate self-convergence from their differences.">
+        {selected === 'convergence' && <Section eyebrow="Study 1 · Automation" title="Mesh convergence" description="Halve the element size at every level and estimate self-convergence from successive solutions.">
           <label className="field-label"><span>Grid levels</span><select value={model.convergence.levels} onChange={(e) => onChange({ ...model, convergence: { levels: Number(e.target.value) } })}><option value={2}>2 levels</option><option value={3}>3 levels · observed order</option><option value={4}>4 levels</option></select></label>
-          <div className="property-row"><span>Sequence</span><strong>{Array.from({ length: model.convergence.levels }, (_, i) => model.mesh.nx * 2 ** i).join(' → ')}</strong></div>
-          <div className="property-row"><span>Finest divisions</span><strong>{finestDivisions} max.</strong></div>
-          {finestDivisions > 128 && <div className="validation-note">Reduce the base mesh or levels: the finest grid is limited to 128 divisions per direction.</div>}
-          <button className="study-button" disabled={converging || finestDivisions > 128} onClick={onRunConvergence}>{converging ? <LoaderCircle size={15} className="spin" /> : <TrendingUp size={15} />}{converging ? 'Running study…' : 'Run convergence study'}</button>
+          <div className="property-row"><span>Sequence</span><strong>{isPolygon ? Array.from({ length: model.convergence.levels }, (_, i) => `R${baseRefinement + i}`).join(' → ') : Array.from({ length: model.convergence.levels }, (_, i) => model.mesh.nx * 2 ** i).join(' → ')}</strong></div>
+          <div className="property-row"><span>{isPolygon ? 'Finest mesh' : 'Finest divisions'}</span><strong>{isPolygon ? `${estimatedTriangles.toLocaleString()} triangles · R${finestRefinement}` : `${finestDivisions} max.`}</strong></div>
+          {convergenceTooLarge && <div className="validation-note">{isPolygon ? 'Reduce polygon refinement or levels: the finest mesh is limited to R5 and 100,000 triangles.' : 'Reduce the base mesh or levels: the finest grid is limited to 128 divisions per direction.'}</div>}
+          <button className="study-button" disabled={converging || convergenceTooLarge} onClick={onRunConvergence}>{converging ? <LoaderCircle size={15} className="spin" /> : <TrendingUp size={15} />}{converging ? 'Running study…' : 'Run convergence study'}</button>
           <div className="solver-note neutral"><ShieldCheck size={16} /><span>L2 differences compare successive grids; they are not exact-solution errors.</span></div>
         </Section>}
 

@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { runConvergenceStudy } from './convergence'
 import { solveElasticity } from './elasticity'
+import { rectangleGeometry } from './geometry'
 import { defaultModel, type HeatModel } from './types'
 
 function benchmarkModel(planeState: HeatModel['elasticity']['planeState']): HeatModel {
   const model = structuredClone(defaultModel)
   model.activePhysics = 'elasticity'
-  model.geometry = { width: 0.2, height: 0.1 }
+  model.geometry = rectangleGeometry(0.2, 0.1)
   model.mesh = { nx: 6, ny: 4 }
   model.material.youngsModulus = 70e9
   model.material.poissonRatio = 0.25

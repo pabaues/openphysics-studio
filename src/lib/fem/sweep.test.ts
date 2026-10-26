@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
+import { polygonGeometry } from './geometry'
 import { runParametricSweep } from './sweep'
 import { defaultModel } from './types'
 
 describe('parametric sweeps', () => {
   it('solves every value without mutating the base model', () => {
     const model = structuredClone(defaultModel)
-    model.mesh = { nx: 6, ny: 4 }
+    model.mesh = { refinement: 1, nx: 6, ny: 4 }
     model.sweep = { parameter: 'geometry.width', values: [0.05, 0.1, 0.2] }
     const before = JSON.stringify(model)
     const report = runParametricSweep(model)
@@ -17,11 +18,21 @@ describe('parametric sweeps', () => {
 
   it('applies source values and rejects irrelevant physics parameters', () => {
     const model = structuredClone(defaultModel)
-    model.mesh = { nx: 4, ny: 4 }
+    model.mesh = { refinement: 1, nx: 4, ny: 4 }
     model.sweep = { parameter: 'physics.heatSource', values: [0, 1000] }
     const report = runParametricSweep(model)
     expect(report.cases[1]!.derived.integral).toBeGreaterThan(report.cases[0]!.derived.integral)
     model.activePhysics = 'electrostatics'
     expect(() => runParametricSweep(model)).toThrow(/does not affect/)
+  })
+
+  it('rejects bounding-box sweeps on polygons but permits material parameters', () => {
+    const model = structuredClone(defaultModel)
+    model.geometry = polygonGeometry([{ x: 0, y: 0 }, { x: 0.2, y: 0 }, { x: 0.2, y: 0.1 }, { x: 0, y: 0.1 }])
+    model.mesh = { nx: 4, ny: 4, refinement: 0 }
+    model.sweep = { parameter: 'geometry.width', values: [0.1, 0.2] }
+    expect(() => runParametricSweep(model)).toThrow(/Bounding-box sweeps/)
+    model.sweep = { parameter: 'material.conductivity', values: [15, 45] }
+    expect(runParametricSweep(model).cases).toHaveLength(2)
   })
 })

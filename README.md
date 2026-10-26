@@ -31,26 +31,37 @@ OpenPhysics Studio is a clean-room, open-source multiphysics workbench. It runs 
 - Elementwise strain, stress and 2D/3D-aware von Mises stress
 - Independent analytical patch benchmarks for displacement and stress
 
+### Geometry and unstructured meshing
+
+- Parametric rectangles or one simple 2D polygon, including concave boundaries
+- CSV coordinate import (`x,y` rows) and SVG polygon/polyline/linear-path import
+- SVG paths support M/L/H/V/Z; curves, holes and multiple subpaths must be preprocessed externally
+- Coordinate normalization to a `(0,0)` minimum and conversion of SVG screen-down Y to Cartesian Y
+- Boundary validation for finite coordinates, self-intersections, duplicate/collinear vertices and dimensions
+- Earcut triangulation with nested one-to-four red refinement (R0–R4 in the interface)
+- Coarse node indices preserved during refinement for direct successive-mesh comparisons
+- Polygon area, bounding-box dimensions, geometry/mesh views and an L-shaped electrostatic preset
+
 ### Automated studies and postprocessing
 
 - Parametric sweeps of width, height, conductivity, permittivity, Young’s modulus, heat source and charge density
-- Between 2 and 12 independently validated cases per sweep
+- Between 2 and 12 independently validated cases per sweep; bounding-box sweeps are rectangle-only
 - Sweep table, average-value plot and selectable result fields
-- Automatic ×2 mesh-refinement sequences with 2–4 levels
+- Automatic ×2 element-size refinement sequences with 2–4 levels on mapped and unstructured meshes
 - Normalized L2 differences between successive grids and observed order
 - Explicit detection of the solver/round-off floor
 - Exact P1 domain integration for primary scalar fields, area-weighted averages and extrema locations
-- Center probe and open CSV exports for derived values and sweep tables
+- Area-centroid probe and open CSV exports for derived values and sweep tables
 - Standalone local HTML simulation reports
 
 ### Shared numerical workflow
 
-- Parametric rectangular geometry
-- Mapped triangular meshes with linear (P1) finite elements
+- Rectangular and simple-polygon 2D geometry with linear (P1) triangular finite elements
+- Mapped or unstructured meshes shared by heat, electrostatics and linear elasticity
 - Sparse assembly and Jacobi-preconditioned conjugate gradients
 - Warm starts for transient time steps
 - Explicit convergence and relative-residual reporting
-- Versioned JSON projects with additive migration from schemas v1–v3
+- Versioned JSON projects (schema v5) with additive migration from schemas v1–v4
 - Stable model signatures independent of object-key insertion order
 - CSV, legacy VTK, JSON and HTML output; structural VTK includes displacement vectors and elementwise von Mises stress
 
@@ -76,7 +87,7 @@ npm run build
 npm run test:ui
 ```
 
-The UI check starts a temporary local server and drives Chrome or Edge through stationary thermal, transient thermal, electrostatic, linear-elastic, mesh-convergence and parametric-sweep workflows. It checks time-frame selection, case selection, von Mises visualization and CSV/VTK/HTML downloads, saves screenshots outside the repository, and stops the server. Set `CHROME_PATH` if the browser is not installed in a standard Windows location.
+The UI check starts a temporary local server and drives Chrome or Edge through stationary thermal, transient thermal, electrostatic, linear-elastic, polygon-import, unstructured-mesh, convergence and parametric-sweep workflows. It checks SVG import, polygon refinement, time-frame selection, case selection, von Mises visualization and CSV/VTK/HTML downloads, saves screenshots outside the repository, and stops the server. Set `CHROME_PATH` if the browser is not installed in a standard Windows location.
 
 See [verification models, analytical benchmarks and tolerances](docs/verification.md) for the exact verification contract.
 
@@ -128,9 +139,9 @@ These are 2D per-unit-depth models. Coefficients and source density are constant
 
 ## Derived values and convergence semantics
 
-For each triangular element, primary scalar fields are integrated exactly using their area and the mean of their three nodal values. Domain averages are `∫u dA / ∫dA`; they are distinct from the field average displayed in the solver metrics. Extrema include coordinates, and the center probe uses P1 barycentric interpolation. Structural derived values interpolate the nodal displacement magnitude; this is not exact integration of the nonlinear magnitude inside each element.
+For each triangular element, primary scalar fields are integrated exactly using their area and the mean of their three nodal values. Domain averages are `∫u dA / ∫dA`; they are distinct from the field average displayed in the solver metrics. Extrema include coordinates, and the area-centroid probe uses P1 barycentric interpolation. Structural derived values interpolate the nodal displacement magnitude; this is not exact integration of the nonlinear magnitude inside each element.
 
-A mesh-convergence study starts from the current base mesh and doubles both divisions at every level. For each pair of successive grids, the finer solution is sampled at the coarse nodes and compared using
+A mesh-convergence study starts from the current base mesh and halves the maximum element size at every level. Rectangles double `nx` and `ny`; polygons use nested red refinement and preserve coarse node indices. For each pair of successive grids, the finer solution is sampled at the coarse nodes and compared using
 
 ```text
 ‖u_fine − u_coarse‖₂ / ‖u_fine‖₂
@@ -138,33 +149,37 @@ A mesh-convergence study starts from the current base mesh and doubles both divi
 
 The observed order is estimated from three consecutive grid levels. These are **successive-grid self-convergence metrics**, not errors against an exact solution. Differences at or below `10 × solver relative tolerance` are marked as the solver/round-off floor, and no observed order is reported there.
 
-For a transient model, mesh convergence and sweep tables use the final time frame. The finest grid is limited to 128 divisions per direction to bound interactive cost. Studies do not modify the base mesh stored in the project.
+For a transient model, mesh convergence and sweep tables use the final time frame. The finest rectangular grid is limited to 128 divisions per direction. Polygon studies are limited to R5 and 100,000 triangles; the interactive base-mesh control provides R0–R4. Studies do not modify the base mesh stored in the project.
+
+Named left/right/top/bottom conditions apply at bounding-box extrema. All other polygon edges retain their natural condition. This is intentionally narrower than arbitrary edge selection or per-edge boundary assignment.
 
 ## Architecture
 
 ```text
-src/lib/fem/scalar.ts          Shared PDE/mass assembly and gradient recovery
-src/lib/fem/solver.ts          Preconditioned conjugate gradients
-src/lib/fem/heat.ts            Stationary/transient thermal interfaces
-src/lib/fem/electrostatics.ts  Electrostatic interface
-src/lib/fem/elasticity.ts      2D vector elasticity and stress recovery
-src/lib/fem/convergence.ts     Automated successive-grid studies
-src/lib/fem/sweep.ts           Independent parametric cases
-src/lib/fem/derived.ts         P1 integration, extrema and point evaluation
-src/lib/fem/project.ts         Schema v4, v1–v3 migration and signatures
-src/lib/fem/exporters.ts       CSV, VTK and standalone HTML reports
-src/components/                Model tree, settings, plots and viewport
-src/App.tsx                    Workflow orchestration
+src/lib/fem/geometry.ts       Polygon validation and SVG/CSV import
+src/lib/fem/mesh.ts           Mapped, Earcut and red-refined triangular meshes
+src/lib/fem/scalar.ts         Shared PDE/mass assembly and gradient recovery
+src/lib/fem/solver.ts         Preconditioned conjugate gradients
+src/lib/fem/heat.ts           Stationary/transient thermal interfaces
+src/lib/fem/electrostatics.ts Electrostatic interface
+src/lib/fem/elasticity.ts     2D vector elasticity and stress recovery
+src/lib/fem/convergence.ts    Automated successive-grid studies
+src/lib/fem/sweep.ts          Independent parametric cases
+src/lib/fem/derived.ts        P1 integration, extrema and point evaluation
+src/lib/fem/project.ts        Schema v5, v1–v4 migration and signatures
+src/lib/fem/exporters.ts      CSV, VTK and standalone HTML reports
+src/components/               Model tree, settings, plots and viewport
+src/App.tsx                   Workflow orchestration
 ```
 
 The numerical core has no React dependency. A future native or WASM solver can implement the same model/result boundary without changing the model-builder interface.
 
 ## Roadmap
 
-1. General spatially varying coefficients and unstructured mesh import
+1. Web Workers/WASM and a direct solver for larger models
 2. One-way thermal–structural coupling and nonzero traction boundaries
-3. Adaptive refinement and broader manufactured-solution verification
-4. Web Workers, Rust/C++ solver backends and parallel execution
+3. General spatially varying coefficients and arbitrary boundary selections
+4. Error-guided adaptive refinement and broader manufactured-solution verification
 5. Community physics plug-ins and fully coupled studies
 
 A full COMSOL replacement is a long-term community program, not a claim made by this prototype.

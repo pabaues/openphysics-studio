@@ -26,7 +26,7 @@ describe('project persistence', () => {
       study: defaultModel.study,
     }
     const parsed = parseProjectJson(JSON.stringify(legacy))
-    expect(parsed.schemaVersion).toBe(4)
+    expect(parsed.schemaVersion).toBe(5)
     expect(parsed.activePhysics).toBe('heat')
     expect(parsed.material.relativePermittivity).toBe(1)
     expect(parsed.material.density).toBe(defaultModel.material.density)
@@ -46,7 +46,7 @@ describe('project persistence', () => {
     delete legacy.transient
     delete legacy.sweep
     const parsed = parseProjectJson(JSON.stringify(legacy))
-    expect(parsed.schemaVersion).toBe(4)
+    expect(parsed.schemaVersion).toBe(5)
     expect(parsed.material.conductivity).toBe(123)
     expect(parsed.study).toEqual({ type: 'stationary', tolerance: 1e-6, maxIterations: 500 })
     expect(parsed.transient).toEqual(defaultModel.transient)
@@ -61,8 +61,32 @@ describe('project persistence', () => {
     }
     delete legacy.elasticity
     const parsed = parseProjectJson(JSON.stringify(legacy))
-    expect(parsed.schemaVersion).toBe(4)
+    expect(parsed.schemaVersion).toBe(5)
     expect(parsed.material.youngsModulus).toBe(defaultModel.material.youngsModulus)
     expect(parsed.elasticity).toEqual(defaultModel.elasticity)
+  })
+
+  it('migrates version 4 rectangles to explicit vertices and mesh refinement', () => {
+    const legacy = {
+      ...structuredClone(defaultModel),
+      schemaVersion: 4,
+      geometry: { width: 0.2, height: 0.1 },
+      mesh: { nx: 12, ny: 8 },
+    }
+    const parsed = parseProjectJson(JSON.stringify(legacy))
+    expect(parsed.schemaVersion).toBe(5)
+    expect(parsed.geometry.shape).toBe('rectangle')
+    expect(parsed.geometry.vertices).toHaveLength(4)
+    expect(parsed.geometry.vertices[2]).toEqual({ x: 0.2, y: 0.1 })
+    expect(parsed.mesh).toEqual({ nx: 12, ny: 8, refinement: 1 })
+  })
+
+  it('rejects dimensions inconsistent with stored vertices', () => {
+    const rectangle = structuredClone(defaultModel)
+    rectangle.geometry.width = 0.2
+    expect(() => parseProjectJson(JSON.stringify(rectangle))).toThrow(/Rectangle vertices/)
+    const polygon = structuredClone(defaultModel)
+    polygon.geometry = { shape: 'polygon', width: 0.2, height: 0.1, vertices: polygon.geometry.vertices }
+    expect(() => parseProjectJson(JSON.stringify(polygon))).toThrow(/bounding box/)
   })
 })

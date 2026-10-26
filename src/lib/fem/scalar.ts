@@ -1,6 +1,6 @@
 import { createRectangularMesh } from './mesh'
 import { solveConjugateGradient, type SparseRow } from './solver'
-import type { BaseSimulationResult, RectangularMesh, Triangle, VectorValue } from './types'
+import type { BaseSimulationResult, Mesh, Triangle, VectorValue } from './types'
 
 export interface ScalarProblem {
   width: number
@@ -34,7 +34,7 @@ export function near(a: number, b: number, scale: number): boolean {
   return Math.abs(a - b) <= Math.max(1, scale) * 1e-10
 }
 
-export function triangleGeometry(mesh: RectangularMesh, triangle: Triangle) {
+export function triangleGeometry(mesh: Mesh, triangle: Triangle) {
   const [ia, ib, ic] = triangle
   const a = mesh.nodes[ia]!
   const b = mesh.nodes[ib]!
@@ -49,7 +49,7 @@ export function triangleGeometry(mesh: RectangularMesh, triangle: Triangle) {
 }
 
 /** Assembles K + aM and F + aM·u with consistent P1 element mass matrices. */
-export function assembleScalar(problem: ScalarProblem, mesh: RectangularMesh): ScalarAssembly {
+export function assembleScalar(problem: ScalarProblem, mesh: Mesh): ScalarAssembly {
   const count = mesh.nodes.length
   if (problem.reactionSource && problem.reactionSource.length !== count) throw new Error('Reaction source size does not match the mesh.')
   const prescribed = problem.initialValues ? [...problem.initialValues] : Array<number>(count).fill(0)
@@ -97,7 +97,7 @@ export function assembleScalar(problem: ScalarProblem, mesh: RectangularMesh): S
   return { rows, rhs, prescribed, freeToGlobal, globalToFree }
 }
 
-export function scalarGradient(mesh: RectangularMesh, values: number[]): VectorValue[] {
+export function scalarGradient(mesh: Mesh, values: number[]): VectorValue[] {
   return mesh.triangles.map((triangle) => {
     const { area, b, c } = triangleGeometry(mesh, triangle)
     let x = 0
@@ -113,7 +113,7 @@ export function scalarGradient(mesh: RectangularMesh, values: number[]): VectorV
 }
 
 /** Solves ∇ · (−c∇u) + au = Q + f with Dirichlet elimination. */
-export function solveScalar(problem: ScalarProblem, existingMesh?: RectangularMesh): ScalarSolution {
+export function solveScalar(problem: ScalarProblem, existingMesh?: Mesh): ScalarSolution {
   const started = performance.now()
   const mesh = existingMesh ?? createRectangularMesh(problem.width, problem.height, problem.nx, problem.ny)
   const assembly = assembleScalar(problem, mesh)

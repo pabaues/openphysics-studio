@@ -1,5 +1,5 @@
 import { AlertTriangle, Box, Grid3X3, Maximize2 } from 'lucide-react'
-import { createRectangularMesh } from '@/lib/fem/mesh'
+import { createModelMesh } from '@/lib/fem/mesh'
 import { resultValues } from '@/lib/fem/study'
 import type { AnySimulationResult, HeatModel } from '@/lib/fem/types'
 
@@ -42,9 +42,7 @@ export function SimulationCanvas({ model, result, view, quantity, showMesh, stal
   const originY = (HEIGHT + domain.height * scale) / 2
   const px = (x: number) => originX + x * scale
   const py = (y: number) => originY - y * scale
-  const mesh = view === 'mesh'
-    ? createRectangularMesh(model.geometry.width, model.geometry.height, model.mesh.nx, model.mesh.ny)
-    : result?.mesh
+  const mesh = view === 'results' ? result?.mesh : createModelMesh(model)
   const structural = result?.physics === 'elasticity' ? result : null
   const deformationScale = structural && structural.maximum > 0 ? 0.12 * Math.max(domain.width, domain.height) / structural.maximum : 1
   const displayPoint = (index: number) => {
@@ -80,20 +78,20 @@ export function SimulationCanvas({ model, result, view, quantity, showMesh, stal
       <text x="830" y="460" className="axis-label">x</text><text x="48" y="45" className="axis-label">y</text>
 
       {view === 'geometry' && <g>
-        <rect x={px(0)} y={py(model.geometry.height)} width={model.geometry.width * scale} height={model.geometry.height * scale} rx="2" fill="#dcecff" stroke="#3b82f6" strokeWidth="2" />
-        {[[0, 0], [model.geometry.width, 0], [model.geometry.width, model.geometry.height], [0, model.geometry.height]].map(([x, y], i) => <circle key={i} cx={px(x!)} cy={py(y!)} r="4" fill="#fff" stroke="#2563eb" strokeWidth="2" />)}
-        <text x={px(model.geometry.width / 2)} y={py(model.geometry.height / 2)} className="domain-label">Domain 1</text>
+        <polygon points={model.geometry.vertices.map((point) => `${px(point.x)},${py(point.y)}`).join(' ')} fill="#dcecff" stroke="#3b82f6" strokeWidth="2" strokeLinejoin="round" />
+        {model.geometry.vertices.map((point, index) => <circle key={index} cx={px(point.x)} cy={py(point.y)} r="4" fill="#fff" stroke="#2563eb" strokeWidth="2" />)}
+        {mesh && <text x={px(mesh.centroid.x)} y={py(mesh.centroid.y)} className="domain-label">Domain 1</text>}
       </g>}
 
       {(view === 'mesh' || view === 'results') && mesh && <g>
-        {structural && view === 'results' && <rect x={px(0)} y={py(domain.height)} width={domain.width * scale} height={domain.height * scale} fill="none" stroke="#94a3b8" strokeDasharray="5 4" strokeWidth="1" />}
+        {structural && view === 'results' && <polygon points={model.geometry.vertices.map((point) => `${px(point.x)},${py(point.y)}`).join(' ')} fill="none" stroke="#94a3b8" strokeDasharray="5 4" strokeWidth="1" />}
         {mesh.triangles.map((triangle, index) => {
           const points = triangle.map((node) => { const point = displayPoint(node); return `${px(point.x)},${py(point.y)}` }).join(' ')
           const value = view === 'results' && values ? nodal ? triangle.reduce((sum, node) => sum + values[node]!, 0) / 3 : values[index]! : 0
           const fill = view === 'results' ? colorAt(value, min, max) : '#f8fbff'
           return <polygon key={index} points={points} fill={fill} stroke={view === 'mesh' || showMesh ? '#64748b' : fill} strokeWidth={view === 'mesh' ? 0.75 : showMesh ? 0.45 : 0.15}><title>{view === 'results' ? `${fieldName}: ${scientific(value)} ${unit}` : `Triangle ${index + 1}`}</title></polygon>
         })}
-        {!structural && <rect x={px(0)} y={py(domain.height)} width={domain.width * scale} height={domain.height * scale} fill="none" stroke="#334155" strokeWidth="1.4" />}
+        {!structural && <polygon points={model.geometry.vertices.map((point) => `${px(point.x)},${py(point.y)}`).join(' ')} fill="none" stroke="#334155" strokeWidth="1.4" strokeLinejoin="round" />}
         {view === 'results' && quantity !== 'vonMises' && quantity !== 'displacement' && !nodal && vectors.map((vector, index) => {
           if (index % Math.max(1, Math.floor(vectors.length / 45)) !== 0) return null
           const triangle = mesh.triangles[index]!

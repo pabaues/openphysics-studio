@@ -1,4 +1,4 @@
-import { createRectangularMesh } from './mesh'
+import { createModelMesh } from './mesh'
 import { near, scalarGradient, solveScalar, type ScalarProblem } from './scalar'
 import type { HeatModel, SimulationResult, TransientFrame } from './types'
 
@@ -54,7 +54,7 @@ function frame(time: number, temperature: number[]): TransientFrame {
 }
 
 function solveTransientHeat(model: HeatModel): SimulationResult {
-  const mesh = createRectangularMesh(model.geometry.width, model.geometry.height, model.mesh.nx, model.mesh.ny)
+  const mesh = createModelMesh(model)
   const settings = model.transient
   const dt = settings.duration / settings.timeSteps
   const reactionCoefficient = model.material.density * model.material.heatCapacity / dt
@@ -85,7 +85,7 @@ function solveTransientHeat(model: HeatModel): SimulationResult {
 }
 
 export function solveHeat(model: HeatModel): SimulationResult {
-  return model.study.type === 'transient' ? solveTransientHeat(model) : thermalResult(model, solveScalar(heatProblem(model)))
+  return model.study.type === 'transient' ? solveTransientHeat(model) : thermalResult(model, solveScalar(heatProblem(model), createModelMesh(model)))
 }
 
 /** Returns an independent frame without discarding the transient dataset. */

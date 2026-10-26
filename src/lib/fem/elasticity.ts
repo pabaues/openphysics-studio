@@ -1,7 +1,7 @@
-import { createRectangularMesh } from './mesh'
+import { createModelMesh } from './mesh'
 import { near, triangleGeometry } from './scalar'
 import { solveConjugateGradient, type SparseRow } from './solver'
-import type { HeatModel, RectangularMesh, StructuralBoundaryCondition, StructuralSimulationResult, TensorValue } from './types'
+import type { HeatModel, Mesh, StructuralBoundaryCondition, StructuralSimulationResult, TensorValue } from './types'
 
 type PlaneState = HeatModel['elasticity']['planeState']
 type BoundarySide = 'left' | 'right' | 'top' | 'bottom'
@@ -44,7 +44,7 @@ function boundaryValue(model: HeatModel, x: number, y: number, dof: number): num
   return undefined
 }
 
-function strainDisplacement(mesh: RectangularMesh, triangle: [number, number, number]): number[][] {
+function strainDisplacement(mesh: Mesh, triangle: [number, number, number]): number[][] {
   const { area, b, c } = triangleGeometry(mesh, triangle)
   const matrix = Array.from({ length: 3 }, () => Array<number>(6).fill(0))
   for (let local = 0; local < 3; local += 1) {
@@ -70,7 +70,7 @@ function tensorProduct(matrix: number[][], vector: number[]): TensorValue {
 /** Isotropic small-strain 2D elasticity with two-component linear triangular elements. */
 export function solveElasticity(model: HeatModel): StructuralSimulationResult {
   const started = performance.now()
-  const mesh = createRectangularMesh(model.geometry.width, model.geometry.height, model.mesh.nx, model.mesh.ny)
+  const mesh = createModelMesh(model)
   const dofCount = mesh.nodes.length * 2
   const values = Array<number>(dofCount).fill(0)
   const freeToGlobal: number[] = []

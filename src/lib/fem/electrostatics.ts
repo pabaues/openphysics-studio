@@ -1,9 +1,11 @@
+import { createModelMesh } from './mesh'
 import { near, solveScalar } from './scalar'
 import { VACUUM_PERMITTIVITY, type ElectricSimulationResult, type HeatModel } from './types'
 
 export function solveElectrostatics(model: HeatModel): ElectricSimulationResult {
   const { width, height } = model.geometry
   const permittivity = model.material.relativePermittivity * VACUUM_PERMITTIVITY
+  const mesh = createModelMesh(model)
   const solution = solveScalar({
     width,
     height,
@@ -24,7 +26,7 @@ export function solveElectrostatics(model: HeatModel): ElectricSimulationResult 
       }
       return undefined
     },
-  })
+  }, mesh)
 
   return {
     physics: 'electrostatics',

@@ -1,4 +1,5 @@
 import { deriveValues, type DerivedValues } from './derived'
+import { rectangleGeometry } from './geometry'
 import { heatModelSchema } from './project'
 import { solveActiveModel } from './study'
 import type { AnySimulationResult, HeatModel, SweepParameter } from './types'
@@ -29,8 +30,8 @@ export const sweepParameters: Record<SweepParameter, { label: string; unit: stri
 
 function withParameter(model: HeatModel, parameter: SweepParameter, value: number): HeatModel {
   const next = structuredClone(model)
-  if (parameter === 'geometry.width') next.geometry.width = value
-  if (parameter === 'geometry.height') next.geometry.height = value
+  if (parameter === 'geometry.width') next.geometry = rectangleGeometry(value, next.geometry.height)
+  if (parameter === 'geometry.height') next.geometry = rectangleGeometry(next.geometry.width, value)
   if (parameter === 'material.conductivity') next.material.conductivity = value
   if (parameter === 'material.relativePermittivity') next.material.relativePermittivity = value
   if (parameter === 'material.youngsModulus') next.material.youngsModulus = value
@@ -43,6 +44,9 @@ export function runParametricSweep(model: HeatModel): SweepReport {
   const started = performance.now()
   const { parameter, values } = model.sweep
   const metadata = sweepParameters[parameter]
+  if (model.geometry.shape === 'polygon' && parameter.startsWith('geometry.')) {
+    throw new Error('Bounding-box sweeps require a rectangular geometry; choose a material or physics parameter.')
+  }
   if (metadata.physics !== 'both' && metadata.physics !== model.activePhysics) {
     throw new Error(`${metadata.label} does not affect the active ${model.activePhysics} interface.`)
   }

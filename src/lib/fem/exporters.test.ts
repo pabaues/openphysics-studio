@@ -31,7 +31,7 @@ describe('scientific exporters', () => {
 
   it('exports every sweep case', () => {
     const model = structuredClone(defaultModel)
-    model.mesh = { nx: 3, ny: 2 }
+    model.mesh = { refinement: 1, nx: 3, ny: 2 }
     model.sweep = { parameter: 'material.conductivity', values: [15, 45] }
     const csv = toSweepCsv(runParametricSweep(model))
     expect(csv.split('\n')).toHaveLength(3)
@@ -41,7 +41,7 @@ describe('scientific exporters', () => {
   it('exports structural displacement vectors and elementwise von Mises stress', () => {
     const model = structuredClone(defaultModel)
     model.activePhysics = 'elasticity'
-    model.mesh = { nx: 3, ny: 2 }
+    model.mesh = { refinement: 1, nx: 3, ny: 2 }
     model.elasticity.left = { type: 'roller' }
     const structural = solveElasticity(model)
     const csv = toCsv(structural)

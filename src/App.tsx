@@ -27,6 +27,7 @@ import { SimulationCanvas, type ResultQuantity, type ViewMode } from '@/componen
 import { downloadText, toCsv, toDerivedCsv, toHtmlReport, toSweepCsv, toVtk } from '@/lib/fem/exporters'
 import { heatModelSchema, modelSignature, parseProjectJson } from '@/lib/fem/project'
 import { runConvergenceStudy } from '@/lib/fem/convergence'
+import { parseGeometryFile, polygonGeometry, rectangleGeometry } from '@/lib/fem/geometry'
 import { heatResultAtTime } from '@/lib/fem/heat'
 import { runParametricSweep, type SweepReport } from '@/lib/fem/sweep'
 import { solveActiveModel } from '@/lib/fem/study'
@@ -136,6 +137,21 @@ function App() {
     setModel(next)
     compute(next)
   }
+  const importGeometry = async (file: File) => {
+    try {
+      const geometry = parseGeometryFile(file.name, await file.text())
+      const fallback: HeatModel['sweep']['parameter'] = model.activePhysics === 'heat' ? 'material.conductivity' : model.activePhysics === 'electrostatics' ? 'material.relativePermittivity' : 'material.youngsModulus'
+      updateModel({
+        ...model, geometry,
+        sweep: { ...model.sweep, parameter: model.sweep.parameter.startsWith('geometry.') ? fallback : model.sweep.parameter },
+      })
+      setSelected('geometry')
+      setView('geometry')
+      notify(`Imported ${geometry.vertices.length}-vertex polygon from ${file.name}`)
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Unable to import this geometry', 'error')
+    }
+  }
   const displayResult = result?.physics === 'heat' ? heatResultAtTime(result, frameIndex) : result
   const exportFile = (format: 'csv' | 'vtk' | 'json' | 'derived' | 'html' | 'sweep') => {
     if (format === 'json') {
@@ -164,7 +180,7 @@ function App() {
   })
 
   const modelForPhysics = (physics: ActivePhysics): HeatModel => {
-    const common = ['geometry.width', 'geometry.height']
+    const common = model.geometry.shape === 'rectangle' ? ['geometry.width', 'geometry.height'] : []
     const applicable = physics === 'heat'
       ? [...common, 'material.conductivity', 'physics.heatSource']
       : physics === 'electrostatics' ? [...common, 'material.relativePermittivity', 'electrostatics.chargeDensity']
@@ -198,28 +214,36 @@ function App() {
     const next = structuredClone(defaultModel)
     if (preset === 'bar') {
       next.name = 'Insulated conduction bar'
-      next.geometry = { width: 0.2, height: 0.025 }
+      next.geometry = rectangleGeometry(0.2, 0.025)
       next.physics = { heatSource: 0, leftTemperature: 100, rightTemperature: 20, top: { type: 'insulated' }, bottom: { type: 'insulated' } }
     }
     if (preset === 'generation') {
       next.name = 'Volumetric heating plate'
-      next.geometry = { width: 0.08, height: 0.08 }
+      next.geometry = rectangleGeometry(0.08, 0.08)
       next.material.conductivity = 15
       next.physics = { heatSource: 500000, leftTemperature: 20, rightTemperature: 20, top: { type: 'temperature', value: 20 }, bottom: { type: 'temperature', value: 20 } }
     }
     if (preset === 'electric') {
       next.name = 'Parallel plate capacitor'
       next.activePhysics = 'electrostatics'
-      next.geometry = { width: 0.05, height: 0.02 }
+      next.geometry = rectangleGeometry(0.05, 0.02)
       next.material.relativePermittivity = 4.2
       next.electrostatics = { chargeDensity: 0, leftVoltage: 0, rightVoltage: 12, top: { type: 'zeroCharge' }, bottom: { type: 'zeroCharge' } }
-      next.mesh = { nx: 24, ny: 12 }
+      next.mesh = { refinement: 1, nx: 24, ny: 12 }
+      setQuantity('potential')
+    } else if (preset === 'polygon') {
+      next.name = 'L-shaped electrostatic domain'
+      next.activePhysics = 'electrostatics'
+      next.geometry = polygonGeometry([{ x: 0, y: 0 }, { x: 0.2, y: 0 }, { x: 0.2, y: 0.1 }, { x: 0.1, y: 0.1 }, { x: 0.1, y: 0.2 }, { x: 0, y: 0.2 }])
+      next.electrostatics = { chargeDensity: 0, leftVoltage: 0, rightVoltage: 12, top: { type: 'zeroCharge' }, bottom: { type: 'zeroCharge' } }
+      next.mesh = { nx: 24, ny: 12, refinement: 2 }
+      next.sweep = { parameter: 'material.relativePermittivity', values: [1, 2.2, 4.2] }
       setQuantity('potential')
     } else if (preset === 'tension') {
       next.name = 'Uniaxial tension patch'
       next.activePhysics = 'elasticity'
-      next.geometry = { width: 0.2, height: 0.1 }
-      next.mesh = { nx: 24, ny: 12 }
+      next.geometry = rectangleGeometry(0.2, 0.1)
+      next.mesh = { refinement: 1, nx: 24, ny: 12 }
       next.material.youngsModulus = 70e9
       next.material.poissonRatio = 0.25
       next.elasticity.left = { type: 'roller' }
@@ -266,7 +290,7 @@ function App() {
     </header>
 
     <div className="ribbon">
-      <div className="ribbon-group preset-group"><Flame size={16} className="text-orange-500" /><select aria-label="Example model" onChange={(event) => choosePreset(event.target.value)} value=""><option value="" disabled>Example models</option><option value="plate">Thermal plate study</option><option value="bar">Insulated conduction bar</option><option value="generation">Volumetric heating plate</option><option value="electric">Parallel plate capacitor</option><option value="tension">Uniaxial tension patch</option></select><ChevronDown size={12} /></div>
+      <div className="ribbon-group preset-group"><Flame size={16} className="text-orange-500" /><select aria-label="Example model" onChange={(event) => choosePreset(event.target.value)} value=""><option value="" disabled>Example models</option><option value="plate">Thermal plate study</option><option value="bar">Insulated conduction bar</option><option value="generation">Volumetric heating plate</option><option value="electric">Parallel plate capacitor</option><option value="polygon">L-shaped electrostatic domain</option><option value="tension">Uniaxial tension patch</option></select><ChevronDown size={12} /></div>
       <div className="ribbon-separator" />
       <button className="ribbon-button" onClick={() => selectNode('geometry')}><Box size={16} /><span>Geometry</span></button>
       <div className="physics-picker">{model.activePhysics === 'heat' ? <Flame size={15} /> : model.activePhysics === 'electrostatics' ? <Zap size={15} /> : <Box size={15} />}<select aria-label="Active physics" value={model.activePhysics} onChange={(event) => changePhysics(event.target.value as ActivePhysics)}><option value="heat">Heat Transfer</option><option value="electrostatics">Electrostatics</option><option value="elasticity">Linear Elasticity</option></select><Activity size={12} /></div>
@@ -306,7 +330,7 @@ function App() {
           <div className="metric solver-metric"><span>LINEAR SOLVER</span><strong className={displayResult?.converged ? 'converged' : 'not-converged'}>{displayResult?.converged ? 'Converged' : 'Check'} </strong><small>{displayResult ? `${displayResult.iterations} iterations · ${displayResult.relativeResidual.toExponential(1)} residual` : 'Not solved'}</small></div>
         </div>
       </section>
-      <Inspector model={model} selected={selected} result={displayResult} stale={stale} converging={converging} onChange={updateModel} onExport={exportFile} onRunConvergence={runConvergence} onRunSweep={runSweep} />
+      <Inspector model={model} selected={selected} result={displayResult} stale={stale} converging={converging} onChange={updateModel} onImportGeometry={importGeometry} onExport={exportFile} onRunConvergence={runConvergence} onRunSweep={runSweep} />
     </main>
 
     <footer className="status-bar"><span className={`status-indicator ${result?.converged && !stale ? 'ok' : ''}`} /><span>{converging ? 'Running successive mesh studies…' : computing ? 'Assembling and solving…' : stale ? 'Results need updating' : result?.converged ? 'Study completed successfully' : 'Ready'}</span><span className="status-divider">|</span><span>2D · {physicsName}</span><div className="header-spacer" /><Gauge size={12} /><span>{result ? `${result.solveTimeMs.toFixed(1)} ms` : '—'}</span><span className="status-divider">|</span><span>Local session</span><Download size={12} /><span>Open data</span></footer>

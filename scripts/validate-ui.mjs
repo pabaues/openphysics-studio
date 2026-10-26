@@ -89,6 +89,36 @@ try {
   assert.equal(electricDownload.suggestedFilename(), 'electric-potential.csv')
   assert.equal(await electricDownload.failure(), null)
 
+  await page.locator('.ribbon-button').filter({ hasText: 'Geometry' }).click()
+  await page.getByLabel('Geometry file').setInputFiles({
+    name: 'l-domain.svg', mimeType: 'image/svg+xml',
+    buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0 H2 V1 H1 V2 H0 Z" /></svg>'),
+  })
+  await page.getByText('Simple polygon', { exact: true }).waitFor()
+  assert.equal(await page.locator('.selection-card strong').textContent(), '1 domain · 6 boundary segments')
+  await page.screenshot({ path: path.join(output, 'openphysics-polygon-geometry.png'), fullPage: true })
+  await page.locator('.ribbon-button').filter({ hasText: 'Mesh' }).click()
+  assert.equal(await page.getByLabel('Polygon refinement').inputValue(), '1')
+  await page.getByLabel('Polygon refinement').focus()
+  await page.getByLabel('Polygon refinement').press('ArrowRight')
+  assert.equal(await page.getByLabel('Polygon refinement').inputValue(), '2')
+  assert.equal(await page.locator('.simulation-canvas polygon:has(title)').count(), 64)
+  await page.screenshot({ path: path.join(output, 'openphysics-polygon-mesh.png'), fullPage: true })
+  await page.getByLabel('Active physics').selectOption('heat')
+  await page.locator('.compute-button').click()
+  await page.waitForFunction(() => document.querySelector('.viewport-label')?.textContent?.includes('Temperature field') && !document.querySelector('.outdated-label'))
+  const polygonDownloadPromise = page.waitForEvent('download')
+  await page.getByRole('button', { name: /Export field \+ mesh/ }).click()
+  const polygonDownload = await polygonDownloadPromise
+  assert.equal(polygonDownload.suggestedFilename(), 'temperature-field.vtk')
+  assert.equal(await polygonDownload.failure(), null)
+  await page.getByRole('button', { name: 'Mesh convergence', exact: true }).click()
+  await page.getByRole('button', { name: 'Run convergence study' }).click()
+  await page.locator('.convergence-panel').waitFor({ timeout: 60000 })
+  assert.equal(await page.locator('.convergence-table tbody tr').count(), 3)
+  assert.equal(await page.locator('.convergence-table tbody tr').first().locator('td').first().textContent(), 'P1 · R2')
+  await page.screenshot({ path: path.join(output, 'openphysics-polygon-convergence.png'), fullPage: true })
+
   await page.getByLabel('Example model').selectOption('tension')
   await page.waitForFunction(() => document.querySelector('.viewport-label')?.textContent?.includes('Displacement magnitude'))
   assert.equal(await page.locator('.document-name').inputValue(), 'Uniaxial tension patch')
@@ -162,7 +192,7 @@ try {
   await page.setViewportSize({ width: 1100, height: 780 })
   await page.screenshot({ path: path.join(output, 'openphysics-compact.png'), fullPage: true })
   assert.deepEqual(errors, [], `Browser errors:\n${errors.join('\n')}`)
-  console.log('UI validation passed: thermal, transient, electrostatics, elasticity, structural export/convergence, sweeps, derived values, reports and responsive layout.')
+  console.log('UI validation passed: thermal, transient, electrostatics, elasticity, SVG polygon import, unstructured VTK/convergence, sweeps, derived values, reports and responsive layout.')
   console.log(`Screenshots: ${output}`)
 } finally {
   if (browser) await browser.close()
