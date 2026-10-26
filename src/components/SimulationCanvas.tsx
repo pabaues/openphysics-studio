@@ -1,12 +1,14 @@
 import { AlertTriangle, Box, Grid3X3, Maximize2 } from 'lucide-react'
-import type { HeatModel, SimulationResult } from '@/lib/fem/types'
+import { createRectangularMesh } from '@/lib/fem/mesh'
+import { resultValues } from '@/lib/fem/study'
+import type { AnySimulationResult, HeatModel } from '@/lib/fem/types'
 
 export type ViewMode = 'geometry' | 'mesh' | 'results'
-export type ResultQuantity = 'temperature' | 'flux'
+export type ResultQuantity = 'temperature' | 'flux' | 'potential' | 'electricField'
 
 interface SimulationCanvasProps {
   model: HeatModel
-  result: SimulationResult | null
+  result: AnySimulationResult | null
   view: ViewMode
   quantity: ResultQuantity
   showMesh: boolean
@@ -40,85 +42,61 @@ export function SimulationCanvas({ model, result, view, quantity, showMesh, stal
   const originY = (HEIGHT + domain.height * scale) / 2
   const px = (x: number) => originX + x * scale
   const py = (y: number) => originY - y * scale
-  const mesh = result?.mesh
-  const values = result && quantity === 'temperature' ? result.temperature : result?.flux.map((item) => item.magnitude)
+  const mesh = view === 'mesh'
+    ? createRectangularMesh(model.geometry.width, model.geometry.height, model.mesh.nx, model.mesh.ny)
+    : result?.mesh
+  const primary = quantity === 'temperature' || quantity === 'potential'
+  const values = result ? primary ? resultValues(result) : result.physics === 'heat' ? result.flux.map((item) => item.magnitude) : result.electricField.map((item) => item.magnitude) : undefined
+  const vectors = result ? result.physics === 'heat' ? result.flux : result.electricField : []
   const min = values ? Math.min(...values) : 0
   const max = values ? Math.max(...values) : 1
-  const unit = quantity === 'temperature' ? '°C' : 'W/m²'
+  const unit = result?.physics === 'electrostatics' ? primary ? 'V' : 'V/m' : primary ? '°C' : 'W/m²'
+  const fieldName = result?.physics === 'electrostatics' ? primary ? 'Electric potential' : 'Electric field magnitude' : primary ? 'Temperature field' : 'Heat flux magnitude'
 
-  return (
-    <div className="canvas-wrap">
-      <svg className="simulation-canvas" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-label={`${view} visualization`}>
-        <defs>
-          <pattern id="smallGrid" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M 24 0 L 0 0 0 24" fill="none" stroke="#e8edf3" strokeWidth="0.7" /></pattern>
-          <linearGradient id="colorScale" x1="0" x2="0" y1="1" y2="0">{COLORS.map((color, index) => <stop key={color} offset={`${(index / (COLORS.length - 1)) * 100}%`} stopColor={color} />)}</linearGradient>
-          <marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b" /></marker>
-        </defs>
-        <rect width={WIDTH} height={HEIGHT} fill="#f8fafc" />
-        <rect width={WIDTH} height={HEIGHT} fill="url(#smallGrid)" />
-        <line x1="55" y1="455" x2="825" y2="455" stroke="#cbd5e1" markerEnd="url(#arrow)" />
-        <line x1="55" y1="455" x2="55" y2="55" stroke="#cbd5e1" markerEnd="url(#arrow)" />
-        <text x="830" y="460" className="axis-label">x</text>
-        <text x="48" y="45" className="axis-label">y</text>
+  return <div className="canvas-wrap">
+    <svg className="simulation-canvas" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-label={`${view} visualization`}>
+      <defs>
+        <pattern id="smallGrid" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M 24 0 L 0 0 0 24" fill="none" stroke="#e8edf3" strokeWidth="0.7" /></pattern>
+        <linearGradient id="colorScale" x1="0" x2="0" y1="1" y2="0">{COLORS.map((color, index) => <stop key={color} offset={`${(index / (COLORS.length - 1)) * 100}%`} stopColor={color} />)}</linearGradient>
+        <marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b" /></marker>
+      </defs>
+      <rect width={WIDTH} height={HEIGHT} fill="#f8fafc" /><rect width={WIDTH} height={HEIGHT} fill="url(#smallGrid)" />
+      <line x1="55" y1="455" x2="825" y2="455" stroke="#cbd5e1" markerEnd="url(#arrow)" /><line x1="55" y1="455" x2="55" y2="55" stroke="#cbd5e1" markerEnd="url(#arrow)" />
+      <text x="830" y="460" className="axis-label">x</text><text x="48" y="45" className="axis-label">y</text>
 
-        {view === 'geometry' && (
-          <g>
-            <rect x={px(0)} y={py(model.geometry.height)} width={model.geometry.width * scale} height={model.geometry.height * scale} rx="2" fill="#dcecff" stroke="#3b82f6" strokeWidth="2" />
-            {[[0, 0], [model.geometry.width, 0], [model.geometry.width, model.geometry.height], [0, model.geometry.height]].map(([x, y], i) => <circle key={i} cx={px(x!)} cy={py(y!)} r="4" fill="#fff" stroke="#2563eb" strokeWidth="2" />)}
-            <text x={px(model.geometry.width / 2)} y={py(model.geometry.height / 2)} className="domain-label">Domain 1</text>
-          </g>
-        )}
+      {view === 'geometry' && <g>
+        <rect x={px(0)} y={py(model.geometry.height)} width={model.geometry.width * scale} height={model.geometry.height * scale} rx="2" fill="#dcecff" stroke="#3b82f6" strokeWidth="2" />
+        {[[0, 0], [model.geometry.width, 0], [model.geometry.width, model.geometry.height], [0, model.geometry.height]].map(([x, y], i) => <circle key={i} cx={px(x!)} cy={py(y!)} r="4" fill="#fff" stroke="#2563eb" strokeWidth="2" />)}
+        <text x={px(model.geometry.width / 2)} y={py(model.geometry.height / 2)} className="domain-label">Domain 1</text>
+      </g>}
 
-        {(view === 'mesh' || view === 'results') && mesh && (
-          <g>
-            {mesh.triangles.map((triangle, index) => {
-              const points = triangle.map((node) => `${px(mesh.nodes[node]!.x)},${py(mesh.nodes[node]!.y)}`).join(' ')
-              const value = view === 'results' && values
-                ? quantity === 'temperature'
-                  ? triangle.reduce((sum, node) => sum + values[node]!, 0) / 3
-                  : values[index]!
-                : 0
-              const fill = view === 'results' ? colorAt(value, min, max) : '#f8fbff'
-              return <polygon key={index} points={points} fill={fill} stroke={view === 'mesh' || showMesh ? '#64748b' : fill} strokeWidth={view === 'mesh' ? 0.75 : showMesh ? 0.45 : 0.15}><title>{view === 'results' ? `${quantity === 'temperature' ? 'Temperature' : 'Heat flux'}: ${scientific(value)} ${unit}` : `Triangle ${index + 1}`}</title></polygon>
-            })}
-            <rect x={px(0)} y={py(domain.height)} width={domain.width * scale} height={domain.height * scale} fill="none" stroke="#334155" strokeWidth="1.4" />
-            {view === 'results' && quantity === 'flux' && result.flux.map((flux, index) => {
-              if (index % Math.max(1, Math.floor(result.flux.length / 45)) !== 0) return null
-              const triangle = mesh.triangles[index]!
-              const cx = triangle.reduce((sum, node) => sum + mesh.nodes[node]!.x, 0) / 3
-              const cy = triangle.reduce((sum, node) => sum + mesh.nodes[node]!.y, 0) / 3
-              const length = flux.magnitude > 0 ? 13 : 0
-              const dx = (flux.x / flux.magnitude) * length
-              const dy = (flux.y / flux.magnitude) * length
-              return <line key={`flux-${index}`} x1={px(cx) - dx / 2} y1={py(cy) + dy / 2} x2={px(cx) + dx / 2} y2={py(cy) - dy / 2} stroke="#172033" strokeWidth="1.2" markerEnd="url(#arrow)" opacity="0.8" />
-            })}
-          </g>
-        )}
+      {(view === 'mesh' || view === 'results') && mesh && <g>
+        {mesh.triangles.map((triangle, index) => {
+          const points = triangle.map((node) => `${px(mesh.nodes[node]!.x)},${py(mesh.nodes[node]!.y)}`).join(' ')
+          const value = view === 'results' && values ? primary ? triangle.reduce((sum, node) => sum + values[node]!, 0) / 3 : values[index]! : 0
+          const fill = view === 'results' ? colorAt(value, min, max) : '#f8fbff'
+          return <polygon key={index} points={points} fill={fill} stroke={view === 'mesh' || showMesh ? '#64748b' : fill} strokeWidth={view === 'mesh' ? 0.75 : showMesh ? 0.45 : 0.15}><title>{view === 'results' ? `${fieldName}: ${scientific(value)} ${unit}` : `Triangle ${index + 1}`}</title></polygon>
+        })}
+        <rect x={px(0)} y={py(domain.height)} width={domain.width * scale} height={domain.height * scale} fill="none" stroke="#334155" strokeWidth="1.4" />
+        {view === 'results' && !primary && vectors.map((vector, index) => {
+          if (index % Math.max(1, Math.floor(vectors.length / 45)) !== 0) return null
+          const triangle = mesh.triangles[index]!
+          const cx = triangle.reduce((sum, node) => sum + mesh.nodes[node]!.x, 0) / 3
+          const cy = triangle.reduce((sum, node) => sum + mesh.nodes[node]!.y, 0) / 3
+          const length = vector.magnitude > 0 ? 13 : 0
+          const dx = (vector.x / vector.magnitude) * length
+          const dy = (vector.y / vector.magnitude) * length
+          return <line key={`vector-${index}`} x1={px(cx) - dx / 2} y1={py(cy) + dy / 2} x2={px(cx) + dx / 2} y2={py(cy) - dy / 2} stroke="#172033" strokeWidth="1.2" markerEnd="url(#arrow)" opacity="0.8" />
+        })}
+      </g>}
 
-        {view !== 'results' && (
-          <g className="dimensions">
-            <line x1={px(0)} y1={py(0) + 28} x2={px(model.geometry.width)} y2={py(0) + 28} />
-            <text x={px(model.geometry.width / 2)} y={py(0) + 46}>{model.geometry.width} m</text>
-            <text x={px(0) - 12} y={py(model.geometry.height / 2)} transform={`rotate(-90 ${px(0) - 12} ${py(model.geometry.height / 2)})`}>{model.geometry.height} m</text>
-          </g>
-        )}
-
-        {view === 'results' && result && (
-          <g>
-            <rect x="825" y="110" width="13" height="270" fill="url(#colorScale)" stroke="#94a3b8" strokeWidth="0.6" />
-            <text x="849" y="115" className="scale-text">{scientific(max)}</text>
-            <text x="849" y="385" className="scale-text">{scientific(min)}</text>
-            <text x="831" y="94" className="scale-title">{unit}</text>
-          </g>
-        )}
-        <text x={px(model.geometry.width / 2)} y={py(model.geometry.height) - 18} className="boundary-text top">TOP</text>
-        <text x={px(model.geometry.width / 2)} y={py(0) + 20} className="boundary-text">BOTTOM</text>
-        <text x={px(0) + 10} y={py(model.geometry.height / 2)} className="boundary-text" transform={`rotate(-90 ${px(0) + 10} ${py(model.geometry.height / 2)})`}>LEFT</text>
-        <text x={px(model.geometry.width) - 10} y={py(model.geometry.height / 2)} className="boundary-text" transform={`rotate(90 ${px(model.geometry.width) - 10} ${py(model.geometry.height / 2)})`}>RIGHT</text>
-      </svg>
-      <div className="viewport-label">{view === 'geometry' ? <Box size={14} /> : <Grid3X3 size={14} />}{view === 'geometry' ? 'Geometry 1' : view === 'mesh' ? 'Mesh 1' : quantity === 'temperature' ? 'Temperature field' : 'Heat flux magnitude'}</div>
-      <button className="viewport-expand" title="Fit view"><Maximize2 size={15} /></button>
-      {stale && view === 'results' && <div className="stale-banner"><AlertTriangle size={14} />Parameters changed — compute to update</div>}
-    </div>
-  )
+      {view !== 'results' && <g className="dimensions"><line x1={px(0)} y1={py(0) + 28} x2={px(model.geometry.width)} y2={py(0) + 28} /><text x={px(model.geometry.width / 2)} y={py(0) + 46}>{model.geometry.width} m</text><text x={px(0) - 12} y={py(model.geometry.height / 2)} transform={`rotate(-90 ${px(0) - 12} ${py(model.geometry.height / 2)})`}>{model.geometry.height} m</text></g>}
+      {view === 'results' && result && <g><rect x="825" y="110" width="13" height="270" fill="url(#colorScale)" stroke="#94a3b8" strokeWidth="0.6" /><text x="849" y="115" className="scale-text">{scientific(max)}</text><text x="849" y="385" className="scale-text">{scientific(min)}</text><text x="831" y="94" className="scale-title">{unit}</text></g>}
+      <text x={px(domain.width / 2)} y={py(domain.height) - 18} className="boundary-text top">TOP</text><text x={px(domain.width / 2)} y={py(0) + 20} className="boundary-text">BOTTOM</text>
+      <text x={px(0) + 10} y={py(domain.height / 2)} className="boundary-text" transform={`rotate(-90 ${px(0) + 10} ${py(domain.height / 2)})`}>LEFT</text><text x={px(domain.width) - 10} y={py(domain.height / 2)} className="boundary-text" transform={`rotate(90 ${px(domain.width) - 10} ${py(domain.height / 2)})`}>RIGHT</text>
+    </svg>
+    <div className="viewport-label">{view === 'geometry' ? <Box size={14} /> : <Grid3X3 size={14} />}{view === 'geometry' ? 'Geometry 1' : view === 'mesh' ? 'Mesh 1' : fieldName}</div>
+    <button className="viewport-expand" title="Fit view"><Maximize2 size={15} /></button>
+    {stale && view === 'results' && <div className="stale-banner"><AlertTriangle size={14} />Parameters changed — compute to update</div>}
+  </div>
 }

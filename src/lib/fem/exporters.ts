@@ -1,19 +1,25 @@
-import type { SimulationResult } from './types'
+import type { AnySimulationResult } from './types'
 
-export function toCsv(result: SimulationResult): string {
-  const rows = result.mesh.nodes.map((node, index) =>
-    [node.x, node.y, result.temperature[index]].join(','),
-  )
-  return ['x_m,y_m,temperature_C', ...rows].join('\n')
+function field(result: AnySimulationResult) {
+  return result.physics === 'heat'
+    ? { values: result.temperature, name: 'temperature_C', title: 'temperature field' }
+    : { values: result.potential, name: 'potential_V', title: 'electric potential field' }
 }
 
-export function toVtk(result: SimulationResult): string {
-  const { mesh, temperature } = result
+export function toCsv(result: AnySimulationResult): string {
+  const { values, name } = field(result)
+  const rows = result.mesh.nodes.map((node, index) => [node.x, node.y, values[index]].join(','))
+  return [`x_m,y_m,${name}`, ...rows].join('\n')
+}
+
+export function toVtk(result: AnySimulationResult): string {
+  const { mesh } = result
+  const { values, name, title } = field(result)
   const points = mesh.nodes.map((node) => `${node.x} ${node.y} 0`).join('\n')
   const cells = mesh.triangles.map((cell) => `3 ${cell.join(' ')}`).join('\n')
   const cellTypes = mesh.triangles.map(() => '5').join('\n')
   return `# vtk DataFile Version 3.0
-OpenPhysics Studio temperature field
+OpenPhysics Studio ${title}
 ASCII
 DATASET UNSTRUCTURED_GRID
 POINTS ${mesh.nodes.length} double
@@ -23,9 +29,9 @@ ${cells}
 CELL_TYPES ${mesh.triangles.length}
 ${cellTypes}
 POINT_DATA ${mesh.nodes.length}
-SCALARS temperature_C double 1
+SCALARS ${name} double 1
 LOOKUP_TABLE default
-${temperature.join('\n')}
+${values.join('\n')}
 `
 }
 

@@ -78,10 +78,30 @@ try {
   assert.equal(download.suggestedFilename(), 'temperature-field.csv')
   assert.equal(await download.failure(), null)
 
+  await page.getByLabel('Example model').selectOption('electric')
+  await page.waitForFunction(() => document.querySelector('.viewport-label')?.textContent?.includes('Electric potential'))
+  assert.equal(await page.locator('.document-name').inputValue(), 'Parallel plate capacitor')
+  assert.equal(await page.getByLabel('Result quantity').inputValue(), 'potential')
+  await page.screenshot({ path: path.join(output, 'openphysics-electrostatics.png'), fullPage: true })
+  const electricDownloadPromise = page.waitForEvent('download')
+  await page.getByRole('button', { name: /Export potential/ }).click()
+  const electricDownload = await electricDownloadPromise
+  assert.equal(electricDownload.suggestedFilename(), 'electric-potential.csv')
+  assert.equal(await electricDownload.failure(), null)
+
+  await page.getByLabel('Example model').selectOption('generation')
+  await page.waitForFunction(() => document.querySelector('.document-name')?.value === 'Volumetric heating plate' && !document.querySelector('.outdated-label'))
+  await page.getByRole('button', { name: 'Mesh convergence', exact: true }).click()
+  await page.getByRole('button', { name: 'Run convergence study' }).click()
+  await page.locator('.convergence-panel').waitFor({ timeout: 60000 })
+  assert.equal(await page.locator('.convergence-table tbody tr').count(), 3)
+  assert(Number(await page.locator('.convergence-table tbody tr').last().locator('td').last().textContent()) > 0)
+  await page.screenshot({ path: path.join(output, 'openphysics-convergence.png'), fullPage: true })
+
   await page.setViewportSize({ width: 1100, height: 780 })
   await page.screenshot({ path: path.join(output, 'openphysics-compact.png'), fullPage: true })
   assert.deepEqual(errors, [], `Browser errors:\n${errors.join('\n')}`)
-  console.log('UI validation passed: render, mesh, edit, compute, preset, export, responsive layout.')
+  console.log('UI validation passed: thermal, electrostatics, exports, mesh convergence, responsive layout.')
   console.log(`Screenshots: ${output}`)
 } finally {
   if (browser) await browser.close()

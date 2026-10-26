@@ -151,6 +151,33 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 
+.physics-active { margin-left: auto; width: 6px; height: 6px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 3px #dcfce7; }
+.physics-picker { height: 31px; display: flex; align-items: center; gap: 6px; padding: 0 8px; border: 1px solid var(--border); border-radius: 5px; background: #fff; color: #64748b; }
+.physics-picker select { appearance: none; border: 0; outline: 0; background: transparent; font-size: 10px; color: #475569; cursor: pointer; }
+.study-button { height: 36px; border: 0; border-radius: 5px; background: #2563eb; color: #fff; display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 10px; font-weight: 650; cursor: pointer; }
+.study-button:hover:not(:disabled) { background: #1d4ed8; }
+.validation-note { padding: 9px; border: 1px solid #fed7aa; background: #fff7ed; color: #9a3412; border-radius: 4px; font-size: 9px; line-height: 1.5; }
+.solver-note.neutral { background: #f1f5f9; color: #64748b; }
+.convergence-panel { flex: 0 0 164px; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 190px; background: #fff; border-top: 1px solid var(--border); }
+.convergence-table-wrap { min-width: 0; padding: 10px 14px 8px; }
+.convergence-heading { display: flex; align-items: center; gap: 7px; color: #2563eb; margin-bottom: 7px; }
+.convergence-heading > div { display: flex; flex-direction: column; gap: 1px; }
+.convergence-heading strong { color: #334155; font-size: 10px; }
+.convergence-heading span { color: #94a3b8; font-size: 8px; }
+.convergence-heading button { margin-left: auto; border: 0; background: transparent; color: #94a3b8; cursor: pointer; padding: 4px; }
+.convergence-table { width: 100%; border-collapse: collapse; font-size: 8px; font-variant-numeric: tabular-nums; }
+.convergence-table th { color: #94a3b8; font-weight: 600; text-align: right; padding: 4px 7px; border-bottom: 1px solid #e8edf3; }
+.convergence-table th:first-child, .convergence-table td:first-child { text-align: left; }
+.convergence-table td { color: #526075; text-align: right; padding: 4px 7px; border-bottom: 1px solid #f1f5f9; }
+.convergence-note { margin-top: 5px; color: #a0aec0; font-size: 7px; }
+.convergence-chart { border-left: 1px solid #edf1f5; padding: 11px 13px 7px; }
+.convergence-chart > span { color: #94a3b8; font-size: 7px; font-weight: 700; letter-spacing: .7px; }
+.convergence-chart svg { width: 100%; height: 112px; overflow: visible; }
+.convergence-chart line { stroke: #cbd5e1; stroke-width: .8; }
+.convergence-chart polyline { fill: none; stroke: #2563eb; stroke-width: 1.7; }
+.convergence-chart circle { fill: #fff; stroke: #2563eb; stroke-width: 1.5; }
+.convergence-chart text { fill: #94a3b8; font-size: 7px; text-anchor: middle; }
+
 @media (max-width: 1100px) {
   .workspace { grid-template-columns: 194px minmax(360px, 1fr) 260px; }
   .saved-state, .community-badge { display: none; }
