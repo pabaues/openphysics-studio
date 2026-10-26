@@ -21,15 +21,25 @@ OpenPhysics Studio is a clean-room, open-source multiphysics workbench. It runs 
 - Fixed-potential and zero-charge/symmetry boundaries
 - Electric potential and electric-field visualization
 
+### Linear Elasticity
+
+- Small-strain isotropic plane stress and plane strain
+- Young’s modulus, Poisson’s ratio and uniform body forces
+- Free, fixed, roller and prescribed normal-displacement boundaries
+- Two displacement DOF per node with P1 triangular elements
+- Automatically scaled deformed shape and displacement magnitude
+- Elementwise strain, stress and 2D/3D-aware von Mises stress
+- Independent analytical patch benchmarks for displacement and stress
+
 ### Automated studies and postprocessing
 
-- Parametric sweeps of width, height, conductivity, permittivity, heat source and charge density
+- Parametric sweeps of width, height, conductivity, permittivity, Young’s modulus, heat source and charge density
 - Between 2 and 12 independently validated cases per sweep
 - Sweep table, average-value plot and selectable result fields
 - Automatic ×2 mesh-refinement sequences with 2–4 levels
 - Normalized L2 differences between successive grids and observed order
 - Explicit detection of the solver/round-off floor
-- Exact P1 domain integration, area-weighted averages and extrema locations
+- Exact P1 domain integration for primary scalar fields, area-weighted averages and extrema locations
 - Center probe and open CSV exports for derived values and sweep tables
 - Standalone local HTML simulation reports
 
@@ -40,9 +50,9 @@ OpenPhysics Studio is a clean-room, open-source multiphysics workbench. It runs 
 - Sparse assembly and Jacobi-preconditioned conjugate gradients
 - Warm starts for transient time steps
 - Explicit convergence and relative-residual reporting
-- Versioned JSON projects with additive migration from schemas v1 and v2
+- Versioned JSON projects with additive migration from schemas v1–v3
 - Stable model signatures independent of object-key insertion order
-- CSV, legacy VTK, JSON and HTML output
+- CSV, legacy VTK, JSON and HTML output; structural VTK includes displacement vectors and elementwise von Mises stress
 
 All models and results stay on the local machine. No backend is required.
 
@@ -66,7 +76,9 @@ npm run build
 npm run test:ui
 ```
 
-The UI check starts a temporary local server and drives Chrome or Edge through stationary thermal, transient thermal, electrostatic, mesh-convergence and parametric-sweep workflows. It checks time-frame selection, case selection and CSV/VTK/HTML downloads, saves screenshots outside the repository, and stops the server. Set `CHROME_PATH` if the browser is not installed in a standard Windows location.
+The UI check starts a temporary local server and drives Chrome or Edge through stationary thermal, transient thermal, electrostatic, linear-elastic, mesh-convergence and parametric-sweep workflows. It checks time-frame selection, case selection, von Mises visualization and CSV/VTK/HTML downloads, saves screenshots outside the repository, and stops the server. Set `CHROME_PATH` if the browser is not installed in a standard Windows location.
+
+See [verification models, analytical benchmarks and tolerances](docs/verification.md) for the exact verification contract.
 
 ## Numerical models
 
@@ -101,11 +113,22 @@ For electrostatics, `u = V`, `c = εᵣε₀`, and `Q = ρ`:
 E = −∇V
 ```
 
+For linear elasticity, the vector kernel assembles two displacement components per node:
+
+```text
+∇ · σ + b = 0
+ε = (∇u + ∇uᵀ) / 2
+σ = D : ε
+Kₑ = Aₑ Bᵀ D B
+```
+
+Plane stress and plane strain use their respective isotropic constitutive matrices. Structural stress and strain are elementwise quantities; von Mises includes `σzz` for plane strain. The deformed shape is scaled automatically for display only.
+
 These are 2D per-unit-depth models. Coefficients and source density are constant within the single domain.
 
 ## Derived values and convergence semantics
 
-For each triangular element, the linear field is integrated exactly using its area and the mean of its three nodal values. Domain averages are `∫u dA / ∫dA`; they are distinct from the nodal average displayed in the solver metrics. Extrema include coordinates, and the center probe uses P1 barycentric interpolation.
+For each triangular element, primary scalar fields are integrated exactly using their area and the mean of their three nodal values. Domain averages are `∫u dA / ∫dA`; they are distinct from the field average displayed in the solver metrics. Extrema include coordinates, and the center probe uses P1 barycentric interpolation. Structural derived values interpolate the nodal displacement magnitude; this is not exact integration of the nonlinear magnitude inside each element.
 
 A mesh-convergence study starts from the current base mesh and doubles both divisions at every level. For each pair of successive grids, the finer solution is sampled at the coarse nodes and compared using
 
@@ -124,10 +147,11 @@ src/lib/fem/scalar.ts          Shared PDE/mass assembly and gradient recovery
 src/lib/fem/solver.ts          Preconditioned conjugate gradients
 src/lib/fem/heat.ts            Stationary/transient thermal interfaces
 src/lib/fem/electrostatics.ts  Electrostatic interface
+src/lib/fem/elasticity.ts      2D vector elasticity and stress recovery
 src/lib/fem/convergence.ts     Automated successive-grid studies
 src/lib/fem/sweep.ts           Independent parametric cases
 src/lib/fem/derived.ts         P1 integration, extrema and point evaluation
-src/lib/fem/project.ts         Schema v3, v1/v2 migration and signatures
+src/lib/fem/project.ts         Schema v4, v1–v3 migration and signatures
 src/lib/fem/exporters.ts       CSV, VTK and standalone HTML reports
 src/components/                Model tree, settings, plots and viewport
 src/App.tsx                    Workflow orchestration
@@ -137,12 +161,11 @@ The numerical core has no React dependency. A future native or WASM solver can i
 
 ## Roadmap
 
-1. Linear elasticity and independent benchmark verification
-2. General spatially varying coefficients and unstructured mesh import
-3. One-way thermal–structural coupling
-4. Adaptive refinement and manufactured-solution verification
-5. Web Workers, Rust/C++ solver backends and parallel execution
-6. Community physics plug-ins and fully coupled studies
+1. General spatially varying coefficients and unstructured mesh import
+2. One-way thermal–structural coupling and nonzero traction boundaries
+3. Adaptive refinement and broader manufactured-solution verification
+4. Web Workers, Rust/C++ solver backends and parallel execution
+5. Community physics plug-ins and fully coupled studies
 
 A full COMSOL replacement is a long-term community program, not a claim made by this prototype.
 

@@ -26,7 +26,7 @@ describe('project persistence', () => {
       study: defaultModel.study,
     }
     const parsed = parseProjectJson(JSON.stringify(legacy))
-    expect(parsed.schemaVersion).toBe(3)
+    expect(parsed.schemaVersion).toBe(4)
     expect(parsed.activePhysics).toBe('heat')
     expect(parsed.material.relativePermittivity).toBe(1)
     expect(parsed.material.density).toBe(defaultModel.material.density)
@@ -46,9 +46,23 @@ describe('project persistence', () => {
     delete legacy.transient
     delete legacy.sweep
     const parsed = parseProjectJson(JSON.stringify(legacy))
-    expect(parsed.schemaVersion).toBe(3)
+    expect(parsed.schemaVersion).toBe(4)
     expect(parsed.material.conductivity).toBe(123)
     expect(parsed.study).toEqual({ type: 'stationary', tolerance: 1e-6, maxIterations: 500 })
     expect(parsed.transient).toEqual(defaultModel.transient)
+  })
+
+  it('migrates version 3 projects with structural defaults', () => {
+    const legacy = {
+      ...structuredClone(defaultModel),
+      schemaVersion: 3,
+      material: { conductivity: 45, relativePermittivity: 1, density: 7850, heatCapacity: 475 },
+      elasticity: undefined,
+    }
+    delete legacy.elasticity
+    const parsed = parseProjectJson(JSON.stringify(legacy))
+    expect(parsed.schemaVersion).toBe(4)
+    expect(parsed.material.youngsModulus).toBe(defaultModel.material.youngsModulus)
+    expect(parsed.elasticity).toEqual(defaultModel.elasticity)
   })
 })

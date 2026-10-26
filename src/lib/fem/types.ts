@@ -1,6 +1,6 @@
 export const VACUUM_PERMITTIVITY = 8.8541878128e-12
 
-export type ActivePhysics = 'heat' | 'electrostatics'
+export type ActivePhysics = 'heat' | 'electrostatics' | 'elasticity'
 
 export type BoundaryCondition =
   | { type: 'temperature'; value: number }
@@ -10,6 +10,12 @@ export type ElectricBoundaryCondition =
   | { type: 'potential'; value: number }
   | { type: 'zeroCharge' }
 
+export type StructuralBoundaryCondition =
+  | { type: 'free' }
+  | { type: 'fixed' }
+  | { type: 'roller' }
+  | { type: 'normalDisplacement'; value: number }
+
 export type StudyType = 'stationary' | 'transient'
 
 export type SweepParameter =
@@ -17,11 +23,12 @@ export type SweepParameter =
   | 'geometry.height'
   | 'material.conductivity'
   | 'material.relativePermittivity'
+  | 'material.youngsModulus'
   | 'physics.heatSource'
   | 'electrostatics.chargeDensity'
 
 export interface HeatModel {
-  schemaVersion: 3
+  schemaVersion: 4
   name: string
   activePhysics: ActivePhysics
   geometry: {
@@ -33,6 +40,8 @@ export interface HeatModel {
     relativePermittivity: number
     density: number
     heatCapacity: number
+    youngsModulus: number
+    poissonRatio: number
   }
   physics: {
     heatSource: number
@@ -47,6 +56,15 @@ export interface HeatModel {
     rightVoltage: number
     top: ElectricBoundaryCondition
     bottom: ElectricBoundaryCondition
+  }
+  elasticity: {
+    planeState: 'planeStress' | 'planeStrain'
+    bodyForceX: number
+    bodyForceY: number
+    left: StructuralBoundaryCondition
+    right: StructuralBoundaryCondition
+    top: StructuralBoundaryCondition
+    bottom: StructuralBoundaryCondition
   }
   mesh: {
     nx: number
@@ -94,6 +112,12 @@ export interface VectorValue {
   magnitude: number
 }
 
+export interface TensorValue {
+  xx: number
+  yy: number
+  xy: number
+}
+
 export type HeatFlux = VectorValue
 
 export interface BaseSimulationResult {
@@ -132,7 +156,16 @@ export interface ElectricSimulationResult extends BaseSimulationResult {
   electricField: VectorValue[]
 }
 
-export type AnySimulationResult = SimulationResult | ElectricSimulationResult
+export interface StructuralSimulationResult extends BaseSimulationResult {
+  physics: 'elasticity'
+  displacement: VectorValue[]
+  strain: TensorValue[]
+  stress: TensorValue[]
+  vonMises: number[]
+  planeState: 'planeStress' | 'planeStrain'
+}
+
+export type AnySimulationResult = SimulationResult | ElectricSimulationResult | StructuralSimulationResult
 
 export interface ConvergenceEntry {
   level: number
@@ -158,11 +191,14 @@ export interface ConvergenceReport {
 }
 
 export const defaultModel: HeatModel = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   name: 'Thermal plate study',
   activePhysics: 'heat',
   geometry: { width: 0.1, height: 0.05 },
-  material: { conductivity: 45, relativePermittivity: 1, density: 7850, heatCapacity: 475 },
+  material: {
+    conductivity: 45, relativePermittivity: 1, density: 7850, heatCapacity: 475,
+    youngsModulus: 200e9, poissonRatio: 0.3,
+  },
   physics: {
     heatSource: 250000,
     leftTemperature: 20,
@@ -176,6 +212,15 @@ export const defaultModel: HeatModel = {
     rightVoltage: 5,
     top: { type: 'zeroCharge' },
     bottom: { type: 'zeroCharge' },
+  },
+  elasticity: {
+    planeState: 'planeStress',
+    bodyForceX: 0,
+    bodyForceY: 0,
+    left: { type: 'fixed' },
+    right: { type: 'normalDisplacement', value: 0.00001 },
+    top: { type: 'free' },
+    bottom: { type: 'roller' },
   },
   mesh: { nx: 28, ny: 16 },
   study: { type: 'stationary', tolerance: 1e-9, maxIterations: 2000 },

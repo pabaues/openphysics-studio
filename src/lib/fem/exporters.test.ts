@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { solveHeat } from './heat'
+import { solveElasticity } from './elasticity'
 import { toCsv, toDerivedCsv, toHtmlReport, toSweepCsv, toVtk } from './exporters'
 import { runParametricSweep } from './sweep'
 import { defaultModel } from './types'
@@ -35,6 +36,21 @@ describe('scientific exporters', () => {
     const csv = toSweepCsv(runParametricSweep(model))
     expect(csv.split('\n')).toHaveLength(3)
     expect(csv).toContain('relative_residual')
+  })
+
+  it('exports structural displacement vectors and elementwise von Mises stress', () => {
+    const model = structuredClone(defaultModel)
+    model.activePhysics = 'elasticity'
+    model.mesh = { nx: 3, ny: 2 }
+    model.elasticity.left = { type: 'roller' }
+    const structural = solveElasticity(model)
+    const csv = toCsv(structural)
+    expect(csv.split('\n')[0]).toBe('x_m,y_m,ux_m,uy_m,displacement_m')
+    expect(csv.split('\n')).toHaveLength(structural.mesh.nodes.length + 1)
+    const vtk = toVtk(structural)
+    expect(vtk).toContain('VECTORS displacement_m double')
+    expect(vtk).toContain(`CELL_DATA ${structural.mesh.triangles.length}`)
+    expect(vtk).toContain('SCALARS von_mises_stress_Pa double 1')
   })
 
   it('escapes model names in standalone HTML reports', () => {

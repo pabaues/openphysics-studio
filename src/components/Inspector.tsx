@@ -1,7 +1,7 @@
 import { Download, FileJson, FileText, Info, LoaderCircle, Play, ShieldCheck, TrendingUp } from 'lucide-react'
 import type { NodeId } from './ModelTree'
 import { sweepParameters } from '@/lib/fem/sweep'
-import type { AnySimulationResult, BoundaryCondition, ElectricBoundaryCondition, HeatModel, SweepParameter } from '@/lib/fem/types'
+import type { AnySimulationResult, BoundaryCondition, ElectricBoundaryCondition, HeatModel, StructuralBoundaryCondition, SweepParameter } from '@/lib/fem/types'
 
 interface InspectorProps {
   model: HeatModel
@@ -47,12 +47,26 @@ function ElectricBoundary({ condition, onChange }: { condition: ElectricBoundary
   </>
 }
 
+function StructuralBoundary({ condition, onChange }: { condition: StructuralBoundaryCondition; onChange: (condition: StructuralBoundaryCondition) => void }) {
+  return <>
+    <label className="field-label"><span>Boundary condition</span><select value={condition.type} onChange={(event) => {
+      const type = event.target.value as StructuralBoundaryCondition['type']
+      onChange(type === 'normalDisplacement' ? { type, value: 0 } : { type })
+    }}><option value="free">Free / zero traction</option><option value="fixed">Fixed displacement</option><option value="roller">Roller / normal symmetry</option><option value="normalDisplacement">Prescribed normal displacement</option></select></label>
+    {condition.type === 'normalDisplacement' && <NumberField label="Normal displacement" value={condition.value} unit="m" min={-1000} max={1000} step={0.00001} onChange={(value) => onChange({ type: 'normalDisplacement', value })} />}
+    <div className="equation-box">u · n = uₙ <span>tangential displacement remains free for roller conditions</span></div>
+  </>
+}
+
 export function Inspector({ model, selected, result, stale, converging, onChange, onExport, onRunConvergence, onRunSweep }: InspectorProps) {
   const updatePhysics = (patch: Partial<HeatModel['physics']>) => onChange({ ...model, activePhysics: 'heat', physics: { ...model.physics, ...patch } })
   const updateElectric = (patch: Partial<HeatModel['electrostatics']>) => onChange({ ...model, activePhysics: 'electrostatics', electrostatics: { ...model.electrostatics, ...patch } })
+  const updateStructural = (patch: Partial<HeatModel['elasticity']>) => onChange({ ...model, activePhysics: 'elasticity', study: { ...model.study, type: 'stationary' }, elasticity: { ...model.elasticity, ...patch } })
   const electricBoundary = selected.replace('electric', '').toLowerCase() as 'left' | 'right' | 'top' | 'bottom'
+  const structuralBoundary = selected.replace('structural', '').toLowerCase() as 'left' | 'right' | 'top' | 'bottom'
   const isElectricBoundary = selected.startsWith('electric')
-  const resultIsElectric = result?.physics === 'electrostatics'
+  const isStructuralBoundary = selected.startsWith('structural')
+  const resultName = result?.physics === 'electrostatics' ? 'potential' : result?.physics === 'elasticity' ? 'displacement' : 'temperature'
   const finestDivisions = Math.max(model.mesh.nx, model.mesh.ny) * 2 ** (model.convergence.levels - 1)
 
   return (
@@ -70,6 +84,8 @@ export function Inspector({ model, selected, result, stale, converging, onChange
           <NumberField label="Density" value={model.material.density} unit="kg/m³" min={0.000001} step={100} onChange={(density) => onChange({ ...model, material: { ...model.material, density } })} />
           <NumberField label="Heat capacity" value={model.material.heatCapacity} unit="J/(kg·K)" min={0.000001} step={25} onChange={(heatCapacity) => onChange({ ...model, material: { ...model.material, heatCapacity } })} />
           <NumberField label="Relative permittivity" value={model.material.relativePermittivity} unit="εᵣ" min={0.000001} step={0.5} onChange={(relativePermittivity) => onChange({ ...model, material: { ...model.material, relativePermittivity } })} />
+          <NumberField label="Young’s modulus" value={model.material.youngsModulus} unit="Pa" min={0.000001} max={1e15} step={1e9} onChange={(youngsModulus) => onChange({ ...model, material: { ...model.material, youngsModulus } })} />
+          <NumberField label="Poisson’s ratio" value={model.material.poissonRatio} unit="ν" min={-0.99} max={0.499999} step={0.01} onChange={(poissonRatio) => onChange({ ...model, material: { ...model.material, poissonRatio } })} />
           <div className="property-row"><span>Model</span><strong>Linear, isotropic</strong></div><div className="property-row"><span>Domain</span><strong>All domains</strong></div>
         </Section>}
 
@@ -95,6 +111,19 @@ export function Inspector({ model, selected, result, stale, converging, onChange
           {(electricBoundary === 'left' || electricBoundary === 'right')
             ? <><NumberField label="Electric potential" value={electricBoundary === 'left' ? model.electrostatics.leftVoltage : model.electrostatics.rightVoltage} unit="V" min={-1e9} max={1e9} onChange={(value) => updateElectric(electricBoundary === 'left' ? { leftVoltage: value } : { rightVoltage: value })} /><div className="equation-box">V = V₀ <span>on ∂Ω</span></div></>
             : <ElectricBoundary condition={model.electrostatics[electricBoundary]} onChange={(condition) => updateElectric({ [electricBoundary]: condition })} />}
+        </Section>}
+
+        {selected === 'elasticity' && <Section eyebrow="Solid mechanics" title="Linear elasticity" description="Small-strain isotropic elasticity with two displacement components per node.">
+          <div className="equation-box primary">∇ · σ + b = 0, &nbsp; σ = D : ε</div>
+          <label className="field-label"><span>2D formulation</span><select aria-label="Plane formulation" value={model.elasticity.planeState} onChange={(event) => updateStructural({ planeState: event.target.value as HeatModel['elasticity']['planeState'] })}><option value="planeStress">Plane stress</option><option value="planeStrain">Plane strain</option></select></label>
+          <NumberField label="Body force X" value={model.elasticity.bodyForceX} unit="N/m³" min={-1e15} max={1e15} step={1000} onChange={(bodyForceX) => updateStructural({ bodyForceX })} />
+          <NumberField label="Body force Y" value={model.elasticity.bodyForceY} unit="N/m³" min={-1e15} max={1e15} step={1000} onChange={(bodyForceY) => updateStructural({ bodyForceY })} />
+          <div className="property-row"><span>Discretization</span><strong>P1 triangles · 2 DOF/node</strong></div>
+          <div className="property-row"><span>Stress output</span><strong>Elementwise von Mises</strong></div>
+        </Section>}
+
+        {isStructuralBoundary && <Section eyebrow="Structural boundary" title={`${structuralBoundary[0]!.toUpperCase() + structuralBoundary.slice(1)} boundary`} description="Free, fixed, roller, or prescribed normal-displacement conditions.">
+          <StructuralBoundary condition={model.elasticity[structuralBoundary]} onChange={(condition) => updateStructural({ [structuralBoundary]: condition })} />
         </Section>}
 
         {selected === 'mesh' && <Section eyebrow="Mesh sequence" title="Mapped triangles" description="A structured grid split into first-order triangular finite elements.">
@@ -141,12 +170,12 @@ export function Inspector({ model, selected, result, stale, converging, onChange
         </Section>}
 
         {selected === 'results' && <Section eyebrow="Results" title="Export and provenance" description="Nodal values and mesh connectivity use open, documented formats.">
-          <button className="export-button" disabled={!result} onClick={() => onExport('csv')}><Download size={15} /><span>Export {resultIsElectric ? 'potential' : 'temperature'}</span><b>CSV</b></button>
-          <button className="export-button" disabled={!result} onClick={() => onExport('vtk')}><Download size={15} /><span>Export field + mesh</span><b>VTK</b></button>
+          <button className="export-button" disabled={!result} onClick={() => onExport('csv')}><Download size={15} /><span>Export {resultName}</span><b>CSV</b></button>
+          <button className="export-button" disabled={!result} onClick={() => onExport('vtk')}><Download size={15} /><span>Export {result?.physics === 'elasticity' ? 'displacement + von Mises + mesh' : 'field + mesh'}</span><b>VTK</b></button>
           <button className="export-button" disabled={!result} onClick={() => onExport('derived')}><Download size={15} /><span>Export derived values</span><b>CSV</b></button>
           <button className="export-button" disabled={!result} onClick={() => onExport('html')}><FileText size={15} /><span>Export simulation report</span><b>HTML</b></button>
           <button className="export-button" onClick={() => onExport('json')}><FileJson size={15} /><span>Export model</span><b>JSON</b></button>
-          {result && <div className="property-row"><span>Dataset</span><strong>{stale ? 'Out of date' : resultIsElectric ? 'Electric solution' : 'Thermal solution'}</strong></div>}
+          {result && <div className="property-row"><span>Dataset</span><strong>{stale ? 'Out of date' : result?.physics === 'elasticity' ? 'Structural solution' : result?.physics === 'electrostatics' ? 'Electric solution' : 'Thermal solution'}</strong></div>}
         </Section>}
       </div>
       <div className="inspector-foot">Open model · Open data · Verifiable math</div>

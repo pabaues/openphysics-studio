@@ -27,6 +27,11 @@ export type NodeId =
   | 'electricRight'
   | 'electricTop'
   | 'electricBottom'
+  | 'elasticity'
+  | 'structuralLeft'
+  | 'structuralRight'
+  | 'structuralTop'
+  | 'structuralBottom'
   | 'mesh'
   | 'study'
   | 'convergence'
@@ -68,6 +73,17 @@ export function ModelTree({ selected, onSelect, hasResults, activePhysics }: Mod
           {(['electricLeft', 'electricRight', 'electricTop', 'electricBottom'] as const).map((boundary) => (
             <button key={boundary} className={`tree-item child ${selected === boundary ? 'selected' : ''}`} onClick={() => onSelect(boundary)}>
               <Zap size={12} /><span>{boundary.replace('electric', '')} boundary</span>
+            </button>
+          ))}
+        </div>
+
+        <button className={`tree-item ${selected === 'elasticity' ? 'selected' : ''}`} onClick={() => onSelect('elasticity')}>
+          <Box size={15} /><span>Linear Elasticity</span>{activePhysics === 'elasticity' && <span className="physics-active" title="Active in study" />}
+        </button>
+        <div className="tree-children">
+          {(['structuralLeft', 'structuralRight', 'structuralTop', 'structuralBottom'] as const).map((boundary) => (
+            <button key={boundary} className={`tree-item child ${selected === boundary ? 'selected' : ''}`} onClick={() => onSelect(boundary)}>
+              <Box size={12} /><span>{boundary.replace('structural', '')} boundary</span>
             </button>
           ))}
         </div>

@@ -37,6 +37,7 @@ const initialModel = structuredClone(defaultModel)
 const initialSignature = modelSignature(initialModel)
 const thermalNodes: NodeId[] = ['physics', 'left', 'right', 'top', 'bottom']
 const electricNodes: NodeId[] = ['electrostatics', 'electricLeft', 'electricRight', 'electricTop', 'electricBottom']
+const structuralNodes: NodeId[] = ['elasticity', 'structuralLeft', 'structuralRight', 'structuralTop', 'structuralBottom']
 
 function App() {
   const [model, setModel] = useState<HeatModel>(initialModel)
@@ -146,7 +147,7 @@ function App() {
       return
     }
     if (!displayResult) return
-    const stem = displayResult.physics === 'heat' ? 'temperature-field' : 'electric-potential'
+    const stem = displayResult.physics === 'heat' ? 'temperature-field' : displayResult.physics === 'electrostatics' ? 'electric-potential' : 'structural-displacement'
     if (format === 'csv') downloadText(`${stem}.csv`, toCsv(displayResult), 'text/csv')
     if (format === 'vtk') downloadText(`${stem}.vtk`, toVtk(displayResult))
     if (format === 'derived') downloadText('derived-values.csv', toDerivedCsv(displayResult), 'text/csv')
@@ -166,24 +167,28 @@ function App() {
     const common = ['geometry.width', 'geometry.height']
     const applicable = physics === 'heat'
       ? [...common, 'material.conductivity', 'physics.heatSource']
-      : [...common, 'material.relativePermittivity', 'electrostatics.chargeDensity']
+      : physics === 'electrostatics' ? [...common, 'material.relativePermittivity', 'electrostatics.chargeDensity']
+        : [...common, 'material.youngsModulus']
+    const fallback: HeatModel['sweep']['parameter'] = physics === 'heat' ? 'material.conductivity' : physics === 'electrostatics' ? 'material.relativePermittivity' : 'material.youngsModulus'
     return {
       ...model,
       activePhysics: physics,
-      study: { ...model.study, type: physics === 'electrostatics' ? 'stationary' : model.study.type },
-      sweep: { ...model.sweep, parameter: applicable.includes(model.sweep.parameter) ? model.sweep.parameter : physics === 'heat' ? 'material.conductivity' : 'material.relativePermittivity' },
+      study: { ...model.study, type: physics === 'heat' ? model.study.type : 'stationary' },
+      sweep: { ...model.sweep, parameter: applicable.includes(model.sweep.parameter) ? model.sweep.parameter : fallback },
     }
   }
   const changePhysics = (physics: ActivePhysics) => {
     updateModel(modelForPhysics(physics))
-    setQuantity(physics === 'heat' ? 'temperature' : 'potential')
-    setSelected(physics === 'heat' ? 'physics' : 'electrostatics')
+    setQuantity(physics === 'heat' ? 'temperature' : physics === 'electrostatics' ? 'potential' : 'displacement')
+    setSelected(physics === 'heat' ? 'physics' : physics === 'electrostatics' ? 'electrostatics' : 'elasticity')
   }
   const selectNode = (node: NodeId) => {
     if (thermalNodes.includes(node) && model.activePhysics !== 'heat') updateModel(modelForPhysics('heat'))
     if (electricNodes.includes(node) && model.activePhysics !== 'electrostatics') updateModel(modelForPhysics('electrostatics'))
+    if (structuralNodes.includes(node) && model.activePhysics !== 'elasticity') updateModel(modelForPhysics('elasticity'))
     if (thermalNodes.includes(node)) setQuantity('temperature')
     if (electricNodes.includes(node)) setQuantity('potential')
+    if (structuralNodes.includes(node)) setQuantity('displacement')
     setSelected(node)
     if (node === 'geometry') setView('geometry')
     if (node === 'mesh') setView('mesh')
@@ -210,14 +215,34 @@ function App() {
       next.electrostatics = { chargeDensity: 0, leftVoltage: 0, rightVoltage: 12, top: { type: 'zeroCharge' }, bottom: { type: 'zeroCharge' } }
       next.mesh = { nx: 24, ny: 12 }
       setQuantity('potential')
+    } else if (preset === 'tension') {
+      next.name = 'Uniaxial tension patch'
+      next.activePhysics = 'elasticity'
+      next.geometry = { width: 0.2, height: 0.1 }
+      next.mesh = { nx: 24, ny: 12 }
+      next.material.youngsModulus = 70e9
+      next.material.poissonRatio = 0.25
+      next.elasticity.left = { type: 'roller' }
+      next.elasticity.right = { type: 'normalDisplacement', value: 0.00002 }
+      next.elasticity.bottom = { type: 'roller' }
+      next.elasticity.top = { type: 'free' }
+      next.sweep = { parameter: 'material.youngsModulus', values: [35e9, 70e9, 140e9] }
+      setQuantity('displacement')
     } else {
       setQuantity('temperature')
     }
     loadModel(next)
   }
 
-  const resultUnit = result?.physics === 'electrostatics' ? 'V' : '°C'
-  const physicsName = model.activePhysics === 'heat' ? 'Heat Transfer in Solids' : 'Electrostatics'
+  const resultUnit = quantity === 'vonMises' ? 'Pa' : result?.physics === 'elasticity' ? 'm' : result?.physics === 'electrostatics' ? quantity === 'electricField' ? 'V/m' : 'V' : quantity === 'flux' ? 'W/m²' : '°C'
+  const physicsName = model.activePhysics === 'heat' ? 'Heat Transfer in Solids' : model.activePhysics === 'electrostatics' ? 'Electrostatics' : 'Linear Elasticity'
+  const quantityValues = !displayResult ? [] : displayResult.physics === 'elasticity'
+    ? quantity === 'vonMises' ? displayResult.vonMises : displayResult.displacement.map((value) => value.magnitude)
+    : displayResult.physics === 'electrostatics' ? quantity === 'electricField' ? displayResult.electricField.map((value) => value.magnitude) : displayResult.potential
+      : quantity === 'flux' ? displayResult.flux.map((value) => value.magnitude) : displayResult.temperature
+  const metricMinimum = quantityValues.length ? Math.min(...quantityValues) : 0
+  const metricMaximum = quantityValues.length ? Math.max(...quantityValues) : 0
+  const metricAverage = quantityValues.length ? quantityValues.reduce((sum, value) => sum + value, 0) / quantityValues.length : 0
 
   return <div className="app-shell">
     <header className="app-header">
@@ -237,14 +262,14 @@ function App() {
       <input className="document-name" value={model.name} onChange={(event) => updateModel({ ...model, name: event.target.value })} aria-label="Model name" />
       <span className="saved-state"><Check size={12} />Local project</span><div className="header-spacer" />
       <span className="community-badge">COMMUNITY PREVIEW</span>
-      <button className="help-button" title="About the numerical models" onClick={() => notify('P1 FEM · Heat conduction · Electrostatics · Automated mesh convergence')}><CircleHelp size={17} /></button>
+      <button className="help-button" title="About the numerical models" onClick={() => notify('P1 FEM · Heat conduction · Electrostatics · Linear elasticity · Automated mesh convergence')}><CircleHelp size={17} /></button>
     </header>
 
     <div className="ribbon">
-      <div className="ribbon-group preset-group"><Flame size={16} className="text-orange-500" /><select aria-label="Example model" onChange={(event) => choosePreset(event.target.value)} value=""><option value="" disabled>Example models</option><option value="plate">Thermal plate study</option><option value="bar">Insulated conduction bar</option><option value="generation">Volumetric heating plate</option><option value="electric">Parallel plate capacitor</option></select><ChevronDown size={12} /></div>
+      <div className="ribbon-group preset-group"><Flame size={16} className="text-orange-500" /><select aria-label="Example model" onChange={(event) => choosePreset(event.target.value)} value=""><option value="" disabled>Example models</option><option value="plate">Thermal plate study</option><option value="bar">Insulated conduction bar</option><option value="generation">Volumetric heating plate</option><option value="electric">Parallel plate capacitor</option><option value="tension">Uniaxial tension patch</option></select><ChevronDown size={12} /></div>
       <div className="ribbon-separator" />
       <button className="ribbon-button" onClick={() => selectNode('geometry')}><Box size={16} /><span>Geometry</span></button>
-      <div className="physics-picker">{model.activePhysics === 'heat' ? <Flame size={15} /> : <Zap size={15} />}<select aria-label="Active physics" value={model.activePhysics} onChange={(event) => changePhysics(event.target.value as ActivePhysics)}><option value="heat">Heat Transfer</option><option value="electrostatics">Electrostatics</option></select><Activity size={12} /></div>
+      <div className="physics-picker">{model.activePhysics === 'heat' ? <Flame size={15} /> : model.activePhysics === 'electrostatics' ? <Zap size={15} /> : <Box size={15} />}<select aria-label="Active physics" value={model.activePhysics} onChange={(event) => changePhysics(event.target.value as ActivePhysics)}><option value="heat">Heat Transfer</option><option value="electrostatics">Electrostatics</option><option value="elasticity">Linear Elasticity</option></select><Activity size={12} /></div>
       <button className="ribbon-button" onClick={() => selectNode('mesh')}><Grid3X3 size={16} /><span>Mesh</span></button>
       <div className="header-spacer" />{stale && <span className="outdated-label">Model modified</span>}
       <button className="compute-button" disabled={busy} onClick={() => compute()}>{busy ? <LoaderCircle size={16} className="spin" /> : <Play size={15} fill="currentColor" />}{converging ? 'Studying…' : computing ? 'Computing…' : 'Compute'}<kbd>Ctrl ↵</kbd></button>
@@ -258,7 +283,7 @@ function App() {
           <div className="header-spacer" />
           {view === 'results' && <>
             <select className="quantity-select" value={quantity} onChange={(event) => setQuantity(event.target.value as ResultQuantity)} aria-label="Result quantity">
-              {result?.physics === 'electrostatics' ? <><option value="potential">Electric potential (V)</option><option value="electricField">Electric field (V/m)</option></> : <><option value="temperature">Temperature (°C)</option><option value="flux">Heat flux (W/m²)</option></>}
+              {result?.physics === 'electrostatics' ? <><option value="potential">Electric potential (V)</option><option value="electricField">Electric field (V/m)</option></> : result?.physics === 'elasticity' ? <><option value="displacement">Displacement magnitude (m)</option><option value="vonMises">von Mises stress (Pa)</option></> : <><option value="temperature">Temperature (°C)</option><option value="flux">Heat flux (W/m²)</option></>}
             </select>
             <label className="mesh-toggle"><input type="checkbox" checked={showMesh} onChange={(event) => setShowMesh(event.target.checked)} />Show mesh</label>
           </>}
@@ -274,9 +299,9 @@ function App() {
         {convergenceReport && view === 'results' && <ConvergencePanel report={convergenceReport} onClose={() => setConvergenceReport(null)} />}
         {displayResult && view === 'results' && <DerivedValuesPanel result={displayResult} frameIndex={frameIndex} onFrameChange={setFrameIndex} />}
         <div className="metrics-strip">
-          <div className="metric"><span>MINIMUM</span><strong>{displayResult ? displayResult.minimum.toFixed(3) : '—'} <small>{resultUnit}</small></strong></div>
-          <div className="metric accent"><span>MAXIMUM</span><strong>{displayResult ? displayResult.maximum.toFixed(3) : '—'} <small>{resultUnit}</small></strong></div>
-          <div className="metric"><span>NODAL AVERAGE</span><strong>{displayResult ? displayResult.average.toFixed(3) : '—'} <small>{resultUnit}</small></strong></div>
+          <div className="metric"><span>MINIMUM</span><strong>{displayResult ? metricMinimum.toExponential(3) : '—'} <small>{resultUnit}</small></strong></div>
+          <div className="metric accent"><span>MAXIMUM</span><strong>{displayResult ? metricMaximum.toExponential(3) : '—'} <small>{resultUnit}</small></strong></div>
+          <div className="metric"><span>FIELD AVERAGE</span><strong>{displayResult ? metricAverage.toExponential(3) : '—'} <small>{resultUnit}</small></strong></div>
           <div className="metric"><span>MESH</span><strong>{displayResult ? displayResult.mesh.nodes.length.toLocaleString() : '—'} <small>nodes</small></strong></div>
           <div className="metric solver-metric"><span>LINEAR SOLVER</span><strong className={displayResult?.converged ? 'converged' : 'not-converged'}>{displayResult?.converged ? 'Converged' : 'Check'} </strong><small>{displayResult ? `${displayResult.iterations} iterations · ${displayResult.relativeResidual.toExponential(1)} residual` : 'Not solved'}</small></div>
         </div>

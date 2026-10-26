@@ -88,6 +88,26 @@ try {
   const electricDownload = await electricDownloadPromise
   assert.equal(electricDownload.suggestedFilename(), 'electric-potential.csv')
   assert.equal(await electricDownload.failure(), null)
+
+  await page.getByLabel('Example model').selectOption('tension')
+  await page.waitForFunction(() => document.querySelector('.viewport-label')?.textContent?.includes('Displacement magnitude'))
+  assert.equal(await page.locator('.document-name').inputValue(), 'Uniaxial tension patch')
+  assert.equal(await page.getByLabel('Active physics').inputValue(), 'elasticity')
+  assert.equal(await page.getByLabel('Result quantity').inputValue(), 'displacement')
+  await page.getByLabel('Result quantity').selectOption('vonMises')
+  await page.waitForFunction(() => document.querySelector('.viewport-label')?.textContent?.includes('von Mises stress'))
+  await page.screenshot({ path: path.join(output, 'openphysics-elasticity.png'), fullPage: true })
+  const structuralDownloadPromise = page.waitForEvent('download')
+  await page.getByRole('button', { name: /Export displacement \+ von Mises \+ mesh/ }).click()
+  const structuralDownload = await structuralDownloadPromise
+  assert.equal(structuralDownload.suggestedFilename(), 'structural-displacement.vtk')
+  assert.equal(await structuralDownload.failure(), null)
+  await page.getByRole('button', { name: 'Mesh convergence', exact: true }).click()
+  await page.getByRole('button', { name: 'Run convergence study' }).click()
+  await page.locator('.convergence-panel').waitFor({ timeout: 60000 })
+  assert.equal(await page.locator('.convergence-table tbody tr').count(), 3)
+  await page.screenshot({ path: path.join(output, 'openphysics-elasticity-convergence.png'), fullPage: true })
+
   await page.getByLabel('Active physics').selectOption('heat')
   await page.getByRole('button', { name: 'Parametric sweep', exact: true }).click()
   assert.equal(await page.getByLabel('Sweep parameter').inputValue(), 'material.conductivity')
@@ -142,7 +162,7 @@ try {
   await page.setViewportSize({ width: 1100, height: 780 })
   await page.screenshot({ path: path.join(output, 'openphysics-compact.png'), fullPage: true })
   assert.deepEqual(errors, [], `Browser errors:\n${errors.join('\n')}`)
-  console.log('UI validation passed: thermal, transient, electrostatics, sweeps, derived values, reports, mesh convergence, responsive layout.')
+  console.log('UI validation passed: thermal, transient, electrostatics, elasticity, structural export/convergence, sweeps, derived values, reports and responsive layout.')
   console.log(`Screenshots: ${output}`)
 } finally {
   if (browser) await browser.close()

@@ -4,7 +4,7 @@ import { resultValues } from '@/lib/fem/study'
 import type { AnySimulationResult, HeatModel } from '@/lib/fem/types'
 
 export type ViewMode = 'geometry' | 'mesh' | 'results'
-export type ResultQuantity = 'temperature' | 'flux' | 'potential' | 'electricField'
+export type ResultQuantity = 'temperature' | 'flux' | 'potential' | 'electricField' | 'displacement' | 'vonMises'
 
 interface SimulationCanvasProps {
   model: HeatModel
@@ -21,7 +21,7 @@ const COLORS = ['#253494', '#225ea8', '#1d91c0', '#41b6c4', '#a1dab4', '#ffffcc'
 const RGB_COLORS = COLORS.map((color) => [1, 3, 5].map((start) => Number.parseInt(color.slice(start, start + 2), 16)))
 
 function colorAt(value: number, min: number, max: number): string {
-  if (max - min < 1e-12) return COLORS[5]!
+  if (max - min <= Math.max(1, Math.abs(min), Math.abs(max)) * 1e-7) return COLORS[5]!
   const position = Math.max(0, Math.min(1, (value - min) / (max - min))) * (COLORS.length - 1)
   const lower = Math.floor(position)
   const upper = Math.min(COLORS.length - 1, lower + 1)
@@ -45,13 +45,28 @@ export function SimulationCanvas({ model, result, view, quantity, showMesh, stal
   const mesh = view === 'mesh'
     ? createRectangularMesh(model.geometry.width, model.geometry.height, model.mesh.nx, model.mesh.ny)
     : result?.mesh
-  const primary = quantity === 'temperature' || quantity === 'potential'
-  const values = result ? primary ? resultValues(result) : result.physics === 'heat' ? result.flux.map((item) => item.magnitude) : result.electricField.map((item) => item.magnitude) : undefined
-  const vectors = result ? result.physics === 'heat' ? result.flux : result.electricField : []
+  const structural = result?.physics === 'elasticity' ? result : null
+  const deformationScale = structural && structural.maximum > 0 ? 0.12 * Math.max(domain.width, domain.height) / structural.maximum : 1
+  const displayPoint = (index: number) => {
+    const node = mesh!.nodes[index]!
+    if (!structural || view !== 'results') return node
+    const displacement = structural.displacement[index]!
+    return { x: node.x + deformationScale * displacement.x, y: node.y + deformationScale * displacement.y }
+  }
+  const nodal = quantity === 'temperature' || quantity === 'potential' || quantity === 'displacement'
+  const values = !result ? undefined : nodal ? resultValues(result)
+    : result.physics === 'heat' ? result.flux.map((item) => item.magnitude)
+      : result.physics === 'electrostatics' ? result.electricField.map((item) => item.magnitude)
+        : result.vonMises
+  const vectors = !result ? [] : result.physics === 'heat' ? result.flux : result.physics === 'electrostatics' ? result.electricField : []
   const min = values ? Math.min(...values) : 0
   const max = values ? Math.max(...values) : 1
-  const unit = result?.physics === 'electrostatics' ? primary ? 'V' : 'V/m' : primary ? '°C' : 'W/m²'
-  const fieldName = result?.physics === 'electrostatics' ? primary ? 'Electric potential' : 'Electric field magnitude' : primary ? 'Temperature field' : 'Heat flux magnitude'
+  const unit = result?.physics === 'electrostatics' ? nodal ? 'V' : 'V/m'
+    : result?.physics === 'elasticity' ? nodal ? 'm' : 'Pa'
+      : nodal ? '°C' : 'W/m²'
+  const fieldName = result?.physics === 'electrostatics' ? nodal ? 'Electric potential' : 'Electric field magnitude'
+    : result?.physics === 'elasticity' ? nodal ? 'Displacement magnitude' : 'von Mises stress'
+      : nodal ? 'Temperature field' : 'Heat flux magnitude'
 
   return <div className="canvas-wrap">
     <svg className="simulation-canvas" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-label={`${view} visualization`}>
@@ -71,14 +86,15 @@ export function SimulationCanvas({ model, result, view, quantity, showMesh, stal
       </g>}
 
       {(view === 'mesh' || view === 'results') && mesh && <g>
+        {structural && view === 'results' && <rect x={px(0)} y={py(domain.height)} width={domain.width * scale} height={domain.height * scale} fill="none" stroke="#94a3b8" strokeDasharray="5 4" strokeWidth="1" />}
         {mesh.triangles.map((triangle, index) => {
-          const points = triangle.map((node) => `${px(mesh.nodes[node]!.x)},${py(mesh.nodes[node]!.y)}`).join(' ')
-          const value = view === 'results' && values ? primary ? triangle.reduce((sum, node) => sum + values[node]!, 0) / 3 : values[index]! : 0
+          const points = triangle.map((node) => { const point = displayPoint(node); return `${px(point.x)},${py(point.y)}` }).join(' ')
+          const value = view === 'results' && values ? nodal ? triangle.reduce((sum, node) => sum + values[node]!, 0) / 3 : values[index]! : 0
           const fill = view === 'results' ? colorAt(value, min, max) : '#f8fbff'
           return <polygon key={index} points={points} fill={fill} stroke={view === 'mesh' || showMesh ? '#64748b' : fill} strokeWidth={view === 'mesh' ? 0.75 : showMesh ? 0.45 : 0.15}><title>{view === 'results' ? `${fieldName}: ${scientific(value)} ${unit}` : `Triangle ${index + 1}`}</title></polygon>
         })}
-        <rect x={px(0)} y={py(domain.height)} width={domain.width * scale} height={domain.height * scale} fill="none" stroke="#334155" strokeWidth="1.4" />
-        {view === 'results' && !primary && vectors.map((vector, index) => {
+        {!structural && <rect x={px(0)} y={py(domain.height)} width={domain.width * scale} height={domain.height * scale} fill="none" stroke="#334155" strokeWidth="1.4" />}
+        {view === 'results' && quantity !== 'vonMises' && quantity !== 'displacement' && !nodal && vectors.map((vector, index) => {
           if (index % Math.max(1, Math.floor(vectors.length / 45)) !== 0) return null
           const triangle = mesh.triangles[index]!
           const cx = triangle.reduce((sum, node) => sum + mesh.nodes[node]!.x, 0) / 3
@@ -92,6 +108,7 @@ export function SimulationCanvas({ model, result, view, quantity, showMesh, stal
 
       {view !== 'results' && <g className="dimensions"><line x1={px(0)} y1={py(0) + 28} x2={px(model.geometry.width)} y2={py(0) + 28} /><text x={px(model.geometry.width / 2)} y={py(0) + 46}>{model.geometry.width} m</text><text x={px(0) - 12} y={py(model.geometry.height / 2)} transform={`rotate(-90 ${px(0) - 12} ${py(model.geometry.height / 2)})`}>{model.geometry.height} m</text></g>}
       {view === 'results' && result && <g><rect x="825" y="110" width="13" height="270" fill="url(#colorScale)" stroke="#94a3b8" strokeWidth="0.6" /><text x="849" y="115" className="scale-text">{scientific(max)}</text><text x="849" y="385" className="scale-text">{scientific(min)}</text><text x="831" y="94" className="scale-title">{unit}</text></g>}
+      {structural && view === 'results' && <text x={px(domain.width / 2)} y={py(0) + 46} className="scale-text">Deformed shape · automatic scale ×{scientific(deformationScale)}</text>}
       <text x={px(domain.width / 2)} y={py(domain.height) - 18} className="boundary-text top">TOP</text><text x={px(domain.width / 2)} y={py(0) + 20} className="boundary-text">BOTTOM</text>
       <text x={px(0) + 10} y={py(domain.height / 2)} className="boundary-text" transform={`rotate(-90 ${px(0) + 10} ${py(domain.height / 2)})`}>LEFT</text><text x={px(domain.width) - 10} y={py(domain.height / 2)} className="boundary-text" transform={`rotate(90 ${px(domain.width) - 10} ${py(domain.height / 2)})`}>RIGHT</text>
     </svg>

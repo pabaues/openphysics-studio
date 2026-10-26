@@ -3,12 +3,19 @@ import type { SweepReport } from './sweep'
 import type { AnySimulationResult, HeatModel } from './types'
 
 function field(result: AnySimulationResult) {
-  return result.physics === 'heat'
-    ? { values: result.temperature, name: 'temperature_C', title: 'temperature field', unit: '°C' }
-    : { values: result.potential, name: 'potential_V', title: 'electric potential field', unit: 'V' }
+  if (result.physics === 'heat') return { values: result.temperature, name: 'temperature_C', title: 'temperature field', unit: '°C' }
+  if (result.physics === 'electrostatics') return { values: result.potential, name: 'potential_V', title: 'electric potential field', unit: 'V' }
+  return { values: result.displacement.map((value) => value.magnitude), name: 'displacement_m', title: 'displacement magnitude field', unit: 'm' }
 }
 
 export function toCsv(result: AnySimulationResult): string {
+  if (result.physics === 'elasticity') {
+    const rows = result.mesh.nodes.map((node, index) => {
+      const displacement = result.displacement[index]!
+      return [node.x, node.y, displacement.x, displacement.y, displacement.magnitude].join(',')
+    })
+    return ['x_m,y_m,ux_m,uy_m,displacement_m', ...rows].join('\n')
+  }
   const { values, name } = field(result)
   const rows = result.mesh.nodes.map((node, index) => [node.x, node.y, values[index]].join(','))
   return [`x_m,y_m,${name}`, ...rows].join('\n')
@@ -20,6 +27,13 @@ export function toVtk(result: AnySimulationResult): string {
   const points = mesh.nodes.map((node) => `${node.x} ${node.y} 0`).join('\n')
   const cells = mesh.triangles.map((cell) => `3 ${cell.join(' ')}`).join('\n')
   const cellTypes = mesh.triangles.map(() => '5').join('\n')
+  const structuralData = result.physics === 'elasticity' ? `VECTORS displacement_m double
+${result.displacement.map((value) => `${value.x} ${value.y} 0`).join('\n')}
+CELL_DATA ${mesh.triangles.length}
+SCALARS von_mises_stress_Pa double 1
+LOOKUP_TABLE default
+${result.vonMises.join('\n')}
+` : ''
   return `# vtk DataFile Version 3.0
 OpenPhysics Studio ${title}
 ASCII
@@ -34,7 +48,7 @@ POINT_DATA ${mesh.nodes.length}
 SCALARS ${name} double 1
 LOOKUP_TABLE default
 ${values.join('\n')}
-`
+${structuralData}`
 }
 
 export function toDerivedCsv(result: AnySimulationResult): string {

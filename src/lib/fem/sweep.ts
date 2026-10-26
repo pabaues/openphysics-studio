@@ -17,11 +17,12 @@ export interface SweepReport {
   totalTimeMs: number
 }
 
-export const sweepParameters: Record<SweepParameter, { label: string; unit: string; physics: 'heat' | 'electrostatics' | 'both' }> = {
+export const sweepParameters: Record<SweepParameter, { label: string; unit: string; physics: 'heat' | 'electrostatics' | 'elasticity' | 'both' }> = {
   'geometry.width': { label: 'Width', unit: 'm', physics: 'both' },
   'geometry.height': { label: 'Height', unit: 'm', physics: 'both' },
   'material.conductivity': { label: 'Thermal conductivity', unit: 'W/(m·K)', physics: 'heat' },
   'material.relativePermittivity': { label: 'Relative permittivity', unit: '', physics: 'electrostatics' },
+  'material.youngsModulus': { label: 'Young’s modulus', unit: 'Pa', physics: 'elasticity' },
   'physics.heatSource': { label: 'Heat source', unit: 'W/m³', physics: 'heat' },
   'electrostatics.chargeDensity': { label: 'Space charge', unit: 'C/m³', physics: 'electrostatics' },
 }
@@ -32,6 +33,7 @@ function withParameter(model: HeatModel, parameter: SweepParameter, value: numbe
   if (parameter === 'geometry.height') next.geometry.height = value
   if (parameter === 'material.conductivity') next.material.conductivity = value
   if (parameter === 'material.relativePermittivity') next.material.relativePermittivity = value
+  if (parameter === 'material.youngsModulus') next.material.youngsModulus = value
   if (parameter === 'physics.heatSource') next.physics.heatSource = value
   if (parameter === 'electrostatics.chargeDensity') next.electrostatics.chargeDensity = value
   return heatModelSchema.parse(next)

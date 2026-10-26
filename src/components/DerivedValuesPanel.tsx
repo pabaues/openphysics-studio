@@ -12,10 +12,10 @@ export function DerivedValuesPanel({ result, frameIndex, onFrameChange }: {
   onFrameChange: (index: number) => void
 }) {
   const values = deriveValues(result)
-  const unit = result.physics === 'heat' ? '°C' : 'V'
+  const unit = result.physics === 'heat' ? '°C' : result.physics === 'electrostatics' ? 'V' : 'm'
   const frames = result.physics === 'heat' ? result.transient?.frames : undefined
   return <section className="derived-panel" aria-label="Derived values">
-    <div className="derived-title"><Sigma size={14} /><strong>Derived values</strong><span>Exact P1 domain integration</span></div>
+    <div className="derived-title"><Sigma size={14} /><strong>Derived values</strong><span>{result.physics === 'elasticity' ? 'Nodal displacement magnitude · P1 interpolation' : 'Exact P1 domain integration'}</span></div>
     {frames && <label className="time-control"><span>Time <b>{format(frames[frameIndex]?.time ?? 0)} s</b></span><input aria-label="Time frame" type="range" min="0" max={frames.length - 1} step="1" value={frameIndex} onChange={(event) => onFrameChange(Number(event.target.value))} /></label>}
     <div className="derived-grid">
       <div><span>Domain average</span><strong>{format(values.average)} {unit}</strong></div>
