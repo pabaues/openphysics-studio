@@ -163,11 +163,12 @@ export function Inspector({ model, selected, result, stale, converging, onChange
           </>}
         </Section>}
 
-        {selected === 'study' && <Section eyebrow="Study 1" title={model.study.type === 'transient' ? 'Transient solver' : 'Stationary solver'} description="Sparse systems solved with Jacobi-preconditioned conjugate gradients and reported residuals.">
+        {selected === 'study' && <Section eyebrow="Study 1" title={model.study.type === 'transient' ? 'Transient solver' : 'Stationary solver'} description={model.study.solver === 'direct' ? 'Sparse LDLᵀ factorization for symmetric positive-definite systems, with the true residual reported.' : 'Sparse systems solved with Jacobi-preconditioned conjugate gradients and reported residuals.'}>
           <label className="field-label"><span>Study type</span><select aria-label="Study type" value={model.study.type} onChange={(event) => {
             const type = event.target.value as HeatModel['study']['type']
             onChange({ ...model, activePhysics: type === 'transient' ? 'heat' : model.activePhysics, study: { ...model.study, type } })
           }}><option value="stationary">Stationary</option><option value="transient">Transient heat · implicit Euler</option></select></label>
+          <label className="field-label"><span>Linear solver</span><select aria-label="Linear solver" value={model.study.solver} onChange={(event) => onChange({ ...model, study: { ...model.study, solver: event.target.value as HeatModel['study']['solver'] } })}><option value="iterative">Iterative CG · Jacobi</option><option value="direct">Direct LDLᵀ · sparse</option></select></label>
           {model.study.type === 'transient' && <>
             <NumberField label="Initial temperature" value={model.transient.initialTemperature} unit="°C" min={-273.15} max={10000} onChange={(initialTemperature) => onChange({ ...model, transient: { ...model.transient, initialTemperature } })} />
             <NumberField label="Duration" value={model.transient.duration} unit="s" min={0.000001} step={1} onChange={(duration) => onChange({ ...model, transient: { ...model.transient, duration } })} />

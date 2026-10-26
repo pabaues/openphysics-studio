@@ -10,7 +10,7 @@ describe('project persistence', () => {
 
   it('uses signatures independent of schema key insertion order', () => {
     const reordered = structuredClone(defaultModel)
-    reordered.study = { tolerance: reordered.study.tolerance, maxIterations: reordered.study.maxIterations, type: reordered.study.type }
+    reordered.study = { tolerance: reordered.study.tolerance, maxIterations: reordered.study.maxIterations, type: reordered.study.type, solver: reordered.study.solver }
     expect(JSON.stringify(reordered)).not.toBe(JSON.stringify(defaultModel))
     expect(modelSignature(reordered)).toBe(modelSignature(defaultModel))
   })
@@ -26,7 +26,7 @@ describe('project persistence', () => {
       study: defaultModel.study,
     }
     const parsed = parseProjectJson(JSON.stringify(legacy))
-    expect(parsed.schemaVersion).toBe(5)
+    expect(parsed.schemaVersion).toBe(6)
     expect(parsed.activePhysics).toBe('heat')
     expect(parsed.material.relativePermittivity).toBe(1)
     expect(parsed.material.density).toBe(defaultModel.material.density)
@@ -46,10 +46,25 @@ describe('project persistence', () => {
     delete legacy.transient
     delete legacy.sweep
     const parsed = parseProjectJson(JSON.stringify(legacy))
-    expect(parsed.schemaVersion).toBe(5)
+    expect(parsed.schemaVersion).toBe(6)
     expect(parsed.material.conductivity).toBe(123)
-    expect(parsed.study).toEqual({ type: 'stationary', tolerance: 1e-6, maxIterations: 500 })
+    expect(parsed.study).toEqual({ type: 'stationary', tolerance: 1e-6, maxIterations: 500, solver: 'iterative' })
     expect(parsed.transient).toEqual(defaultModel.transient)
+  })
+
+  it('migrates version 5 projects without replacing geometry or study settings', () => {
+    const legacy = structuredClone(defaultModel) as unknown as Record<string, unknown> & { schemaVersion: number; study: Record<string, unknown> }
+    legacy.schemaVersion = 5
+    delete legacy.study.solver
+    legacy.name = 'Version 5 preserved model'
+    legacy.mesh = { nx: 18, ny: 10, refinement: 2 }
+    legacy.study = { type: 'stationary', tolerance: 1e-9, maxIterations: 800 }
+    const parsed = parseProjectJson(JSON.stringify(legacy))
+    expect(parsed.schemaVersion).toBe(6)
+    expect(parsed.name).toBe('Version 5 preserved model')
+    expect(parsed.geometry).toEqual(defaultModel.geometry)
+    expect(parsed.mesh).toEqual({ nx: 18, ny: 10, refinement: 2 })
+    expect(parsed.study).toEqual({ type: 'stationary', tolerance: 1e-9, maxIterations: 800, solver: 'iterative' })
   })
 
   it('migrates version 3 projects with structural defaults', () => {
@@ -61,7 +76,7 @@ describe('project persistence', () => {
     }
     delete legacy.elasticity
     const parsed = parseProjectJson(JSON.stringify(legacy))
-    expect(parsed.schemaVersion).toBe(5)
+    expect(parsed.schemaVersion).toBe(6)
     expect(parsed.material.youngsModulus).toBe(defaultModel.material.youngsModulus)
     expect(parsed.elasticity).toEqual(defaultModel.elasticity)
   })
@@ -74,7 +89,7 @@ describe('project persistence', () => {
       mesh: { nx: 12, ny: 8 },
     }
     const parsed = parseProjectJson(JSON.stringify(legacy))
-    expect(parsed.schemaVersion).toBe(5)
+    expect(parsed.schemaVersion).toBe(6)
     expect(parsed.geometry.shape).toBe('rectangle')
     expect(parsed.geometry.vertices).toHaveLength(4)
     expect(parsed.geometry.vertices[2]).toEqual({ x: 0.2, y: 0.1 })

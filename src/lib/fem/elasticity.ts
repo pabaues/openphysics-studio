@@ -1,6 +1,6 @@
 import { createModelMesh } from './mesh'
 import { near, triangleGeometry } from './scalar'
-import { solveConjugateGradient, type SparseRow } from './solver'
+import { solveLinearSystem, type SparseRow } from './solver'
 import type { HeatModel, Mesh, StructuralBoundaryCondition, StructuralSimulationResult, TensorValue } from './types'
 
 type PlaneState = HeatModel['elasticity']['planeState']
@@ -116,7 +116,7 @@ export function solveElasticity(model: HeatModel): StructuralSimulationResult {
     const indices = [...entries.keys()].sort((a, b) => a - b)
     return { indices, values: indices.map((index) => entries.get(index)!), diagonal: entries.get(rowIndex) ?? 0 }
   })
-  const solution = solveConjugateGradient(rows, rhs, model.study.tolerance, model.study.maxIterations)
+  const solution = solveLinearSystem(rows, rhs, model.study.solver, model.study.tolerance, model.study.maxIterations)
   solution.values.forEach((value, freeIndex) => { values[freeToGlobal[freeIndex]!] = value })
 
   const displacement = mesh.nodes.map((_, index) => {
@@ -138,7 +138,7 @@ export function solveElasticity(model: HeatModel): StructuralSimulationResult {
   })
   const magnitudes = displacement.map((value) => value.magnitude)
   return {
-    physics: 'elasticity', mesh, displacement, strain, stress, vonMises: stresses,
+    physics: 'elasticity', solver: model.study.solver, mesh, displacement, strain, stress, vonMises: stresses,
     planeState: model.elasticity.planeState,
     converged: solution.converged, iterations: solution.iterations, relativeResidual: solution.relativeResidual,
     solveTimeMs: performance.now() - started,

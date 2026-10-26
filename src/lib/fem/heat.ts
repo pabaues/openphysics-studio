@@ -13,6 +13,7 @@ function heatProblem(model: HeatModel): ScalarProblem {
     source: model.physics.heatSource,
     tolerance: model.study.tolerance,
     maxIterations: model.study.maxIterations,
+    solver: model.study.solver,
     prescribedValue: (x, y) => {
       if (near(x, 0, width)) return model.physics.leftTemperature
       if (near(x, width, width)) return model.physics.rightTemperature
@@ -26,6 +27,7 @@ function heatProblem(model: HeatModel): ScalarProblem {
 function thermalResult(model: HeatModel, solution: ReturnType<typeof solveScalar>): SimulationResult {
   return {
     physics: 'heat',
+    solver: model.study.solver,
     mesh: solution.mesh,
     temperature: solution.values,
     flux: solution.gradient.map((gradient) => ({

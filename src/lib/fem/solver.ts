@@ -90,3 +90,91 @@ export function solveConjugateGradient(
 
   return { values: x, converged, iterations: iteration, relativeResidual }
 }
+
+/**
+ * Sparse LDLᵀ factorization without pivoting for symmetric positive-definite systems.
+ * Elimination-tree fill is stored in row/column maps; no dense N×N matrix is allocated.
+ */
+export function solveDirect(rows: SparseRow[], rhs: number[], tolerance: number): IterativeSolution {
+  const size = rhs.length
+  if (size === 0) return { values: [], converged: true, iterations: 0, relativeResidual: 0 }
+  if (rows.length !== size) throw new Error('The sparse matrix size does not match the right-hand side.')
+
+  const lower = rows.map((source, rowIndex) => {
+    const entries = new Map<number, number>()
+    source.indices.forEach((column, index) => {
+      if (column <= rowIndex) entries.set(column, source.values[index]!)
+    })
+    entries.set(rowIndex, source.diagonal)
+    return entries
+  })
+  const columns = Array.from({ length: size }, () => new Map<number, number>())
+  const diagonal = Array<number>(size).fill(0)
+
+  for (let i = 0; i < size; i += 1) {
+    const row = lower[i]!
+    const keys = [...row.keys()].filter((column) => column < i).sort((a, b) => a - b)
+    const included = new Set(keys)
+    for (let position = 0; position < keys.length; position += 1) {
+      const k = keys[position]!
+      const pivot = diagonal[k]!
+      if (!(pivot > 0) || !Number.isFinite(pivot)) throw new Error('The system is not positive definite; LDLᵀ factorization failed.')
+      const factor = row.get(k)! / pivot
+      row.set(k, factor)
+      if (factor !== 0) {
+        for (const [j, columnFactor] of columns[k]!) {
+          if (j <= k || j > i) continue
+          row.set(j, (row.get(j) ?? 0) - factor * pivot * columnFactor)
+          if (j < i && !included.has(j)) {
+            let insertion = position + 1
+            while (insertion < keys.length && keys[insertion]! < j) insertion += 1
+            keys.splice(insertion, 0, j)
+            included.add(j)
+          }
+        }
+        row.set(i, (row.get(i) ?? 0) - factor * pivot * factor)
+        columns[k]!.set(i, factor)
+      }
+    }
+    const pivot = row.get(i) ?? 0
+    if (!(pivot > 0) || !Number.isFinite(pivot)) throw new Error('The system is not positive definite; LDLᵀ factorization failed.')
+    diagonal[i] = pivot
+  }
+
+  const forward = Array<number>(size).fill(0)
+  for (let i = 0; i < size; i += 1) {
+    let value = rhs[i]!
+    for (const [j, factor] of lower[i]!) if (j < i) value -= factor * forward[j]!
+    forward[i] = value
+  }
+  const scaled = forward.map((value, index) => value / diagonal[index]!)
+  const values = [...scaled]
+  for (let i = size - 1; i >= 0; i -= 1) {
+    let value = scaled[i]!
+    for (const [j, factor] of columns[i]!) value -= factor * values[j]!
+    values[i] = value
+  }
+
+  const ax = multiply(rows, values)
+  const residual = rhs.map((value, index) => value - ax[index]!)
+  const rhsNorm = Math.sqrt(dot(rhs, rhs))
+  const residualNorm = Math.sqrt(dot(residual, residual))
+  const relativeResidual = rhsNorm > 0 ? residualNorm / rhsNorm : residualNorm
+  return {
+    values, converged: Number.isFinite(relativeResidual) && relativeResidual <= Math.max(1e-12, tolerance * 10),
+    iterations: 1, relativeResidual,
+  }
+}
+
+export function solveLinearSystem(
+  rows: SparseRow[],
+  rhs: number[],
+  solver: 'direct' | 'iterative',
+  tolerance: number,
+  maxIterations: number,
+  initial?: number[],
+): IterativeSolution {
+  return solver === 'direct'
+    ? solveDirect(rows, rhs, tolerance)
+    : solveConjugateGradient(rows, rhs, tolerance, maxIterations, initial)
+}

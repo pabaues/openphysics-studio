@@ -58,10 +58,11 @@ OpenPhysics Studio is a clean-room, open-source multiphysics workbench. It runs 
 
 - Rectangular and simple-polygon 2D geometry with linear (P1) triangular finite elements
 - Mapped or unstructured meshes shared by heat, electrostatics and linear elasticity
-- Sparse assembly and Jacobi-preconditioned conjugate gradients
-- Warm starts for transient time steps
-- Explicit convergence and relative-residual reporting
-- Versioned JSON projects (schema v5) with additive migration from schemas v1–v4
+- Sparse assembly with selectable Jacobi-preconditioned conjugate gradients or sparse LDLᵀ direct factorization for SPD systems
+- Warm starts for iterative transient time steps
+- Explicit convergence and true relative-residual reporting for both solver families
+- Computation, mesh convergence and parametric sweeps in a persistent Web Worker; model edits logically invalidate stale responses
+- Versioned JSON projects (schema v6) with additive migration from schemas v1–v5
 - Stable model signatures independent of object-key insertion order
 - CSV, legacy VTK, JSON and HTML output; structural VTK includes displacement vectors and elementwise von Mises stress
 
@@ -87,7 +88,7 @@ npm run build
 npm run test:ui
 ```
 
-The UI check starts a temporary local server and drives Chrome or Edge through stationary thermal, transient thermal, electrostatic, linear-elastic, polygon-import, unstructured-mesh, convergence and parametric-sweep workflows. It checks SVG import, polygon refinement, time-frame selection, case selection, von Mises visualization and CSV/VTK/HTML downloads, saves screenshots outside the repository, and stops the server. Set `CHROME_PATH` if the browser is not installed in a standard Windows location.
+The UI check starts a temporary local server on port 7101 and drives Chrome or Edge through both linear solvers, Web Worker execution, stale-response invalidation, stationary thermal, transient thermal, electrostatic, linear-elastic, polygon-import, unstructured-mesh, convergence and parametric-sweep workflows. It checks SVG import, polygon refinement, time-frame selection, case selection, von Mises visualization and CSV/VTK/HTML downloads, saves screenshots outside the repository, and stops the server. Set `CHROME_PATH` if the browser is not installed in a standard Windows location or `UI_TEST_PORT` to use a different validation port.
 
 See [verification models, analytical benchmarks and tolerances](docs/verification.md) for the exact verification contract.
 
@@ -159,27 +160,29 @@ Named left/right/top/bottom conditions apply at bounding-box extrema. All other 
 src/lib/fem/geometry.ts       Polygon validation and SVG/CSV import
 src/lib/fem/mesh.ts           Mapped, Earcut and red-refined triangular meshes
 src/lib/fem/scalar.ts         Shared PDE/mass assembly and gradient recovery
-src/lib/fem/solver.ts         Preconditioned conjugate gradients
+src/lib/fem/solver.ts         Jacobi-preconditioned CG and sparse direct LDLᵀ
 src/lib/fem/heat.ts           Stationary/transient thermal interfaces
 src/lib/fem/electrostatics.ts Electrostatic interface
 src/lib/fem/elasticity.ts     2D vector elasticity and stress recovery
 src/lib/fem/convergence.ts    Automated successive-grid studies
 src/lib/fem/sweep.ts          Independent parametric cases
 src/lib/fem/derived.ts        P1 integration, extrema and point evaluation
-src/lib/fem/project.ts        Schema v5, v1–v4 migration and signatures
+src/lib/fem/project.ts        Schema v6, v1–v5 migration and signatures
+src/lib/fem/jobClient.ts      Typed persistent Worker requests and responses
+src/workers/study.worker.ts   Background compute, convergence and sweep jobs
 src/lib/fem/exporters.ts      CSV, VTK and standalone HTML reports
 src/components/               Model tree, settings, plots and viewport
-src/App.tsx                   Workflow orchestration
+src/App.tsx                   Workflow orchestration and stale-job invalidation
 ```
 
-The numerical core has no React dependency. A future native or WASM solver can implement the same model/result boundary without changing the model-builder interface.
+The numerical core has no React dependency. Background jobs run sequentially in one Worker; they are not multicore-parallel and editing a model does not immediately terminate a running calculation. A future native or WASM solver can implement the same model/result boundary without changing the model-builder interface. The direct LDLᵀ kernel is limited to SPD systems, uses no pivoting or fill-reducing ordering, and can still be expensive for large meshes.
 
 ## Roadmap
 
-1. Web Workers/WASM and a direct solver for larger models
-2. One-way thermal–structural coupling and nonzero traction boundaries
-3. General spatially varying coefficients and arbitrary boundary selections
-4. Error-guided adaptive refinement and broader manufactured-solution verification
+1. One-way thermal–structural coupling and nonzero traction boundaries
+2. General spatially varying coefficients and arbitrary boundary selections
+3. Error-guided adaptive refinement and broader manufactured-solution verification
+4. WASM kernels, solver ordering and scalable preconditioners
 5. Community physics plug-ins and fully coupled studies
 
 A full COMSOL replacement is a long-term community program, not a claim made by this prototype.

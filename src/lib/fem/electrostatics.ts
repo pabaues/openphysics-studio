@@ -15,6 +15,7 @@ export function solveElectrostatics(model: HeatModel): ElectricSimulationResult 
     source: model.electrostatics.chargeDensity,
     tolerance: model.study.tolerance,
     maxIterations: model.study.maxIterations,
+    solver: model.study.solver,
     prescribedValue: (x, y) => {
       if (near(x, 0, width)) return model.electrostatics.leftVoltage
       if (near(x, width, width)) return model.electrostatics.rightVoltage
@@ -30,6 +31,7 @@ export function solveElectrostatics(model: HeatModel): ElectricSimulationResult 
 
   return {
     physics: 'electrostatics',
+    solver: model.study.solver,
     mesh: solution.mesh,
     potential: solution.values,
     electricField: solution.gradient.map((gradient) => ({

@@ -7,7 +7,8 @@ import { chromium } from 'playwright-core'
 
 const root = process.cwd()
 const output = path.resolve(root, '../../validation')
-const url = 'http://127.0.0.1:7100'
+const port = Number(process.env.UI_TEST_PORT ?? 7101)
+const url = `http://127.0.0.1:${port}`
 const chromeCandidates = [
   process.env.CHROME_PATH,
   'C:/Program Files/Google/Chrome/Application/chrome.exe',
@@ -19,15 +20,15 @@ assert(executablePath, 'Chrome or Edge is required for UI validation.')
 
 try {
   await fetch(url, { signal: AbortSignal.timeout(500) })
-  throw new Error('Port 7100 is already in use; stop the existing server before validation.')
+  throw new Error(`Port ${port} is already in use; choose another UI_TEST_PORT.`)
 } catch (error) {
-  if (error instanceof Error && error.message.startsWith('Port 7100')) throw error
+  if (error instanceof Error && error.message.startsWith(`Port ${port}`)) throw error
 }
 
 await mkdir(output, { recursive: true })
 const server = spawn(process.execPath, [
   path.join(root, 'node_modules/vite/bin/vite.js'),
-  '--host', '127.0.0.1', '--port', '7100', '--strictPort',
+  '--host', '127.0.0.1', '--port', String(port), '--strictPort',
 ], { cwd: root, stdio: 'pipe' })
 let serverOutput = ''
 server.stdout.on('data', (chunk) => { serverOutput += String(chunk) })
@@ -47,6 +48,8 @@ try {
   browser = await chromium.launch({ executablePath, headless: true })
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 })
   const errors = []
+  const workers = []
+  page.on('worker', (worker) => workers.push(worker.url()))
   page.on('pageerror', (error) => errors.push(error.message))
   page.on('console', (message) => {
     if (message.type() === 'error') errors.push(message.text())
@@ -68,6 +71,33 @@ try {
   await page.locator('.compute-button').click()
   await page.locator('.toast.success').waitFor()
   await page.locator('.outdated-label').waitFor({ state: 'detached' })
+
+  await page.getByRole('button', { name: 'Study 1', exact: true }).click()
+  await page.getByLabel('Linear solver').selectOption('direct')
+  await page.locator('.compute-button').click()
+  await page.waitForFunction(() => document.querySelector('.solver-metric strong')?.textContent === 'DIRECT LDLᵀ' && !document.querySelector('.outdated-label'))
+  assert(workers.length > 0, 'Studies must execute in a Web Worker.')
+  await page.locator('.compute-button').evaluate((button) => {
+    button.click()
+    const input = document.querySelector('.document-name')
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+    setter?.call(input, 'Stale response guard')
+    input?.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await page.locator('.outdated-label').waitFor()
+  await page.waitForTimeout(500)
+  assert.equal(await page.locator('.document-name').inputValue(), 'Stale response guard')
+  assert(await page.locator('.outdated-label').isVisible(), 'An obsolete Worker response must not replace the edited model signature.')
+  await page.getByRole('button', { name: 'Mesh 1', exact: true }).click()
+  await page.getByLabel(/Horizontal divisions/).fill('6')
+  await page.getByLabel(/Vertical divisions/).fill('4')
+  await page.getByRole('button', { name: 'Mesh convergence', exact: true }).click()
+  await page.getByLabel('Grid levels').selectOption('2')
+  await page.getByRole('button', { name: 'Run convergence study' }).click()
+  await page.locator('.convergence-panel').waitFor({ timeout: 60000 })
+  assert.equal(await page.locator('.convergence-table tbody tr').count(), 2)
+  assert.equal(await page.locator('.solver-metric strong').textContent(), 'DIRECT LDLᵀ')
+  await page.screenshot({ path: path.join(output, 'openphysics-direct-convergence.png'), fullPage: true })
 
   await page.getByLabel('Example model').selectOption('bar')
   await page.locator('.toast.success').waitFor()

@@ -108,10 +108,12 @@ const v4ModelSchema = v4ModelObject.superRefine((model, context) => {
 })
 type V4Model = z.infer<typeof v4ModelSchema>
 
-export const heatModelSchema = v4ModelObject.extend({
+const v5ModelObject = v4ModelObject.extend({
   schemaVersion: z.literal(5), geometry: geometryV5Schema, mesh: meshV5Schema,
-}).superRefine((model, context) => {
-  if (model.study.type === 'transient' && model.activePhysics !== 'heat') context.addIssue({ code: 'custom', message: 'Transient studies currently require Heat Transfer.' })
+})
+type V5Model = z.infer<typeof v5ModelObject>
+
+function validateGeometry(model: { geometry: V5Model['geometry'] }, context: z.RefinementCtx) {
   const tolerance = Math.max(model.geometry.width, model.geometry.height) * 1e-9
   if (model.geometry.shape === 'rectangle') {
     const expected = rectangleGeometry(model.geometry.width, model.geometry.height)
@@ -128,6 +130,18 @@ export const heatModelSchema = v4ModelObject.extend({
       context.addIssue({ code: 'custom', message: error instanceof Error ? error.message : 'Invalid polygon geometry.' })
     }
   }
+}
+
+const v5ModelSchema = v5ModelObject.superRefine((model, context) => {
+  if (model.study.type === 'transient' && model.activePhysics !== 'heat') context.addIssue({ code: 'custom', message: 'Transient studies currently require Heat Transfer.' })
+  validateGeometry(model, context)
+})
+
+export const heatModelSchema = v5ModelObject.extend({
+  schemaVersion: z.literal(6), study: studySchema.extend({ solver: z.enum(['iterative', 'direct']) }),
+}).superRefine((model, context) => {
+  if (model.study.type === 'transient' && model.activePhysics !== 'heat') context.addIssue({ code: 'custom', message: 'Transient studies currently require Heat Transfer.' })
+  validateGeometry(model, context)
 })
 
 function migrateV2(model: z.infer<typeof v2ModelSchema>): V3Model {
@@ -148,7 +162,7 @@ function migrateV3(model: V3Model): V4Model {
   }
 }
 
-function migrateV4(model: V4Model): HeatModel {
+function migrateV4(model: V4Model): V5Model {
   return {
     ...model, schemaVersion: 5,
     geometry: rectangleGeometry(model.geometry.width, model.geometry.height),
@@ -156,20 +170,25 @@ function migrateV4(model: V4Model): HeatModel {
   }
 }
 
+function migrateV5(model: V5Model): HeatModel {
+  return { ...model, schemaVersion: 6, study: { ...model.study, solver: 'iterative' } }
+}
+
 export function parseProjectJson(source: string): HeatModel {
   const json: unknown = JSON.parse(source)
   if (typeof json === 'object' && json !== null && 'schemaVersion' in json) {
     if (json.schemaVersion === 1) {
       const legacy = legacyModelSchema.parse(json)
-      return migrateV4(migrateV3(migrateV2({
+      return migrateV5(migrateV4(migrateV3(migrateV2({
         ...legacy, schemaVersion: 2, activePhysics: 'heat',
         material: { ...legacy.material, relativePermittivity: 1 },
         electrostatics: structuredClone(defaultModel.electrostatics), convergence: { levels: 3 },
-      })))
+      }))))
     }
-    if (json.schemaVersion === 2) return migrateV4(migrateV3(migrateV2(v2ModelSchema.parse(json))))
-    if (json.schemaVersion === 3) return migrateV4(migrateV3(v3ModelSchema.parse(json)))
-    if (json.schemaVersion === 4) return migrateV4(v4ModelSchema.parse(json))
+    if (json.schemaVersion === 2) return migrateV5(migrateV4(migrateV3(migrateV2(v2ModelSchema.parse(json)))))
+    if (json.schemaVersion === 3) return migrateV5(migrateV4(migrateV3(v3ModelSchema.parse(json))))
+    if (json.schemaVersion === 4) return migrateV5(migrateV4(v4ModelSchema.parse(json)))
+    if (json.schemaVersion === 5) return migrateV5(v5ModelSchema.parse(json))
   }
   return heatModelSchema.parse(json)
 }

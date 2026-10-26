@@ -1,4 +1,4 @@
-# Comparativa funcional: OpenPhysics Studio 0.5 y COMSOL Multiphysics
+# Comparativa funcional: OpenPhysics Studio 0.6 y COMSOL Multiphysics
 
 Fecha de revisión: 26 de octubre de 2026.
 
@@ -8,7 +8,7 @@ OpenPhysics Studio es un prototipo comunitario 2D desarrollado mediante ingenier
 
 ## Matriz de diferencias
 
-| Área | COMSOL Multiphysics | OpenPhysics Studio 0.5 | Brecha pendiente |
+| Área | COMSOL Multiphysics | OpenPhysics Studio 0.6 | Brecha pendiente |
 |---|---|---|---|
 | Flujo Model Builder | Geometría, selecciones, materiales, física, malla, estudios y resultados integrados | Árbol integrado con estados obsoletos, presets y validación de esquema | Selecciones generales, variables, funciones, unidades y secuencias de nodos |
 | Dimensión y geometría | 1D, 2D, axisimetría y 3D; operaciones paramétricas y booleanas | Rectángulo paramétrico o un polígono simple 2D, también cóncavo | Primitivas, agujeros, booleanas, axisimetría, 3D y geometrías multi-dominio |
@@ -24,22 +24,21 @@ OpenPhysics Studio es un prototipo comunitario 2D desarrollado mediante ingenier
 | Adaptación | Refinamiento y estrategias adaptativas según estudio/física | Refinamiento uniforme ×2 en h y estudio automático de autoconvergencia en ambos tipos de malla | Estimadores de error y adaptación h/p orientada por solución |
 | Estudios | Estacionario, transitorio, autovalores, frecuencia, barridos, optimización y más | Estacionario; transitorio térmico; barrido de siete parámetros; convergencia de malla | Autovalores, armónicos, optimización, UQ y estudios multipaso |
 | Integración temporal | Métodos y control temporal según el problema | Euler implícito de primer orden, paso fijo, salida seleccionable | BDF, orden superior, paso adaptativo, eventos y parada por criterios |
-| Solvers | Directos e iterativos, precondicionadores, segregados, no lineales y multigrid | CG disperso con precondicionamiento Jacobi para sistemas SPD | Directos, AMG, no lineales, bloques y control avanzado |
-| HPC | Paralelismo, clúster y opciones GPU | Ejecución local en el hilo del navegador | Web Workers, WASM nativo, memoria compartida, MPI/GPU |
+| Solvers | Directos e iterativos, precondicionadores, segregados, no lineales y multigrid | CG–Jacobi y LDLᵀ directo disperso sin pivotaje, ambos para sistemas SPD | Reordenamiento y pivotaje, AMG, no lineales, bloques, sistemas generales y control avanzado |
+| HPC | Paralelismo, clúster y opciones GPU | Un Web Worker local para cálculo, convergencia y barridos; interfaz no bloqueada | WASM nativo, ejecución paralela, memoria compartida, MPI/GPU y cancelación inmediata |
 | Postproceso | Conjuntos de datos, cortes, gráficas, sondas, integrales y animaciones | Campos y vectores; deformada y von Mises; integrales, sondas, tiempo y barridos | Cortes arbitrarios, líneas de corriente, animación exportable y operadores |
 | Exportación e informes | Múltiples formatos, informes y presentaciones | JSON, CSV, VTK con desplazamiento/von Mises, CSV derivados e informe HTML | VTU/HDF5, series completas, imágenes por lotes e informes configurables |
 | Aplicaciones y gestión | Application Builder, Model Manager, despliegue y colaboración | Presets y archivos locales de proyecto | Editor de apps, servidor, versiones, permisos y colaboración |
 | Automatización | Métodos, API y herramientas de producto | Núcleo TypeScript sin React y scripts de validación | API estable, CLI batch, Python y servidor de estudios |
-| Verificación | Amplia experiencia industrial y recursos de verificación | Benchmarks analíticos estructurales, pruebas escalares, convergencia y navegador | Manufactured solutions adicionales, regresión numérica amplia y certificación por dominio |
+| Verificación | Amplia experiencia industrial y recursos de verificación | Benchmarks analíticos, equivalencia CG/LDLᵀ en tres físicas y transitorio, convergencia y navegador | Manufactured solutions adicionales, regresión numérica amplia y certificación por dominio |
 
 ## Funciones cerradas en esta iteración
 
-- Polígonos simples 2D, incluidos cóncavos, con validación geométrica y normalización de coordenadas.
-- Importación CSV y SVG polygon/polyline/path lineal, más un preset electrostático en L.
-- Triangulación Earcut y refinamiento rojo uniforme 1→4 con índices groseros preservados.
-- Calor, electrostática, elasticidad, valores derivados y exportación CSV/VTK sobre mallas no estructuradas.
-- Convergencia anidada en polígonos, sonda en el centroide de área y proyecto esquema v5 con migración v1–v4.
-- Pruebas geométricas, de área, refinamiento, campos afines y navegador documentadas en [verificación numérica](verification.md).
+- Solver directo LDLᵀ disperso sin matriz densa N×N, seleccionable junto a CG–Jacobi para sistemas SPD.
+- Cálculo, convergencia de malla y barridos en un Web Worker persistente, con invalidación lógica de respuestas obsoletas al editar el modelo.
+- Proyecto esquema v6 con migración aditiva v1–v5 y selección de solver conservada en resultados.
+- Pruebas de factorización, sistemas no SPD, equivalencia directa/iterativa en las tres físicas y en un transitorio, más validación del Worker en navegador.
+- WASM, paralelismo multinúcleo y cancelación inmediata permanecen pendientes; no se afirma que estén implementados.
 
 ## Límites numéricos que el usuario debe conocer
 
@@ -55,10 +54,10 @@ OpenPhysics Studio es un prototipo comunitario 2D desarrollado mediante ingenier
 
 ## Prioridad recomendada
 
-1. Web Workers/WASM y solver directo para modelos mayores.
-2. Acoplamiento térmico–estructural en una dirección y tracciones de contorno no nulas.
-3. Selecciones arbitrarias de aristas y coeficientes espacialmente variables.
-4. Adaptación guiada por error y más soluciones manufacturadas.
+1. Acoplamiento térmico–estructural en una dirección y tracciones de contorno no nulas.
+2. Selecciones arbitrarias de aristas y coeficientes espacialmente variables.
+3. Adaptación guiada por error y más soluciones manufacturadas.
+4. WASM, reordenamiento disperso y precondicionadores escalables.
 5. API pública de física y estudios, seguida de ecuaciones personalizadas.
 
 ## Fuentes oficiales consultadas

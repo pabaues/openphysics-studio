@@ -1,6 +1,6 @@
 import { createRectangularMesh } from './mesh'
-import { solveConjugateGradient, type SparseRow } from './solver'
-import type { BaseSimulationResult, Mesh, Triangle, VectorValue } from './types'
+import { solveLinearSystem, type SparseRow } from './solver'
+import type { BaseSimulationResult, Mesh, SolverKind, Triangle, VectorValue } from './types'
 
 export interface ScalarProblem {
   width: number
@@ -11,6 +11,7 @@ export interface ScalarProblem {
   source: number
   tolerance: number
   maxIterations: number
+  solver: SolverKind
   reactionCoefficient?: number
   reactionSource?: number[]
   initialValues?: number[]
@@ -118,11 +119,12 @@ export function solveScalar(problem: ScalarProblem, existingMesh?: Mesh): Scalar
   const mesh = existingMesh ?? createRectangularMesh(problem.width, problem.height, problem.nx, problem.ny)
   const assembly = assembleScalar(problem, mesh)
   const initial = problem.initialValues?.filter((_, index) => assembly.globalToFree[index]! >= 0)
-  const solution = solveConjugateGradient(assembly.rows, assembly.rhs, problem.tolerance, problem.maxIterations, initial)
+  const solution = solveLinearSystem(assembly.rows, assembly.rhs, problem.solver, problem.tolerance, problem.maxIterations, initial)
   const values = assembly.prescribed
   solution.values.forEach((value, freeIndex) => { values[assembly.freeToGlobal[freeIndex]!] = value })
   return {
     mesh,
+    solver: problem.solver,
     values,
     gradient: scalarGradient(mesh, values),
     converged: solution.converged,

@@ -17,6 +17,7 @@ export type StructuralBoundaryCondition =
   | { type: 'normalDisplacement'; value: number }
 
 export type StudyType = 'stationary' | 'transient'
+export type SolverKind = 'iterative' | 'direct'
 
 export type SweepParameter =
   | 'geometry.width'
@@ -28,7 +29,7 @@ export type SweepParameter =
   | 'electrostatics.chargeDensity'
 
 export interface HeatModel {
-  schemaVersion: 5
+  schemaVersion: 6
   name: string
   activePhysics: ActivePhysics
   geometry: {
@@ -75,6 +76,7 @@ export interface HeatModel {
   }
   study: {
     type: StudyType
+    solver: SolverKind
     tolerance: number
     maxIterations: number
   }
@@ -138,6 +140,7 @@ export type HeatFlux = VectorValue
 
 export interface BaseSimulationResult {
   mesh: Mesh
+  solver: SolverKind
   converged: boolean
   iterations: number
   relativeResidual: number
@@ -209,7 +212,7 @@ export interface ConvergenceReport {
 }
 
 export const defaultModel: HeatModel = {
-  schemaVersion: 5,
+  schemaVersion: 6,
   name: 'Thermal plate study',
   activePhysics: 'heat',
   geometry: { shape: 'rectangle', width: 0.1, height: 0.05, vertices: [{ x: 0, y: 0 }, { x: 0.1, y: 0 }, { x: 0.1, y: 0.05 }, { x: 0, y: 0.05 }] },
@@ -241,7 +244,7 @@ export const defaultModel: HeatModel = {
     bottom: { type: 'roller' },
   },
   mesh: { nx: 28, ny: 16, refinement: 1 },
-  study: { type: 'stationary', tolerance: 1e-9, maxIterations: 2000 },
+  study: { type: 'stationary', solver: 'iterative', tolerance: 1e-9, maxIterations: 2000 },
   transient: { initialTemperature: 20, duration: 10, timeSteps: 100, outputSteps: 20 },
   sweep: { parameter: 'material.conductivity', values: [15, 45, 100] },
   convergence: { levels: 3 },

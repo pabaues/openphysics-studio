@@ -25,11 +25,11 @@ import { DerivedValuesPanel } from '@/components/DerivedValuesPanel'
 import { SweepPanel } from '@/components/SweepPanel'
 import { SimulationCanvas, type ResultQuantity, type ViewMode } from '@/components/SimulationCanvas'
 import { downloadText, toCsv, toDerivedCsv, toHtmlReport, toSweepCsv, toVtk } from '@/lib/fem/exporters'
-import { heatModelSchema, modelSignature, parseProjectJson } from '@/lib/fem/project'
-import { runConvergenceStudy } from '@/lib/fem/convergence'
+import { modelSignature, parseProjectJson } from '@/lib/fem/project'
 import { parseGeometryFile, polygonGeometry, rectangleGeometry } from '@/lib/fem/geometry'
 import { heatResultAtTime } from '@/lib/fem/heat'
-import { runParametricSweep, type SweepReport } from '@/lib/fem/sweep'
+import { createStudyJobClient } from '@/lib/fem/jobClient'
+import { type SweepReport } from '@/lib/fem/sweep'
 import { solveActiveModel } from '@/lib/fem/study'
 import { defaultModel, type ActivePhysics, type AnySimulationResult, type ConvergenceReport, type HeatModel } from '@/lib/fem/types'
 import './App.css'
@@ -56,86 +56,93 @@ function App() {
   const [converging, setConverging] = useState(false)
   const [toast, setToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
+  const jobClient = useRef<ReturnType<typeof createStudyJobClient> | null>(null)
+  const operation = useRef(0)
   const stale = modelSignature(model) !== resultSignature
   const busy = computing || converging
 
+  const getJobClient = () => {
+    jobClient.current ??= createStudyJobClient()
+    return jobClient.current
+  }
   const notify = (text: string, type: 'success' | 'error' = 'success') => {
     setToast({ text, type })
     window.setTimeout(() => setToast(null), 3500)
   }
   const updateModel = (next: HeatModel) => {
+    operation.current += 1
+    setComputing(false)
+    setConverging(false)
     setModel(next)
     setConvergenceReport(null)
     setSweepReport(null)
     setFrameIndex(0)
   }
-  const compute = (candidate = model) => {
+  const compute = async (candidate = model) => {
+    const request = ++operation.current
     setComputing(true)
-    window.setTimeout(() => {
-      try {
-        const validated = heatModelSchema.parse(candidate)
-        const next = solveActiveModel(validated)
-        setResult(next)
-        setResultSignature(modelSignature(validated))
-        setConvergenceReport(null)
-        setSweepReport(null)
-        setFrameIndex(next.physics === 'heat' && next.transient ? next.transient.frames.length - 1 : 0)
-        setView('results')
-        setSelected('results')
-        notify(next.converged ? `Solution converged in ${next.iterations} iterations` : 'Solver stopped before reaching tolerance', next.converged ? 'success' : 'error')
-      } catch (error) {
-        notify(error instanceof Error ? error.message : 'Unable to compute this model', 'error')
-      } finally {
-        setComputing(false)
-      }
-    }, 30)
+    try {
+      const next = await getJobClient().compute(candidate)
+      if (request !== operation.current) return
+      setResult(next)
+      setResultSignature(modelSignature(candidate))
+      setConvergenceReport(null)
+      setSweepReport(null)
+      setFrameIndex(next.physics === 'heat' && next.transient ? next.transient.frames.length - 1 : 0)
+      setView('results')
+      setSelected('results')
+      const detail = next.solver === 'direct' ? `Direct solution completed · ${next.relativeResidual.toExponential(1)} residual` : `Solution converged in ${next.iterations} iterations`
+      notify(next.converged ? detail : 'Solver stopped before reaching tolerance', next.converged ? 'success' : 'error')
+    } catch (error) {
+      if (request === operation.current) notify(error instanceof Error ? error.message : 'Unable to compute this model', 'error')
+    } finally {
+      if (request === operation.current) setComputing(false)
+    }
   }
-  const runConvergence = () => {
+  const runConvergence = async () => {
+    const request = ++operation.current
     setConverging(true)
-    window.setTimeout(() => {
-      try {
-        const validated = heatModelSchema.parse(model)
-        const report = runConvergenceStudy(validated)
-        setConvergenceReport(report)
-        setSweepReport(null)
-        setResult(report.finest)
-        setResultSignature(modelSignature(validated))
-        setFrameIndex(report.finest.physics === 'heat' && report.finest.transient ? report.finest.transient.frames.length - 1 : 0)
-        setView('results')
-        setSelected('results')
-        notify(report.converged ? `Convergence study completed: ${report.entries.length} grids` : 'A grid did not reach solver tolerance', report.converged ? 'success' : 'error')
-      } catch (error) {
-        notify(error instanceof Error ? error.message : 'Unable to run convergence study', 'error')
-      } finally {
-        setConverging(false)
-      }
-    }, 40)
+    try {
+      const report = await getJobClient().convergence(model)
+      if (request !== operation.current) return
+      setConvergenceReport(report)
+      setSweepReport(null)
+      setResult(report.finest)
+      setResultSignature(modelSignature(model))
+      setFrameIndex(report.finest.physics === 'heat' && report.finest.transient ? report.finest.transient.frames.length - 1 : 0)
+      setView('results')
+      setSelected('results')
+      notify(report.converged ? `Convergence study completed: ${report.entries.length} grids` : 'A grid did not reach solver tolerance', report.converged ? 'success' : 'error')
+    } catch (error) {
+      if (request === operation.current) notify(error instanceof Error ? error.message : 'Unable to run convergence study', 'error')
+    } finally {
+      if (request === operation.current) setConverging(false)
+    }
   }
-  const runSweep = () => {
+  const runSweep = async () => {
+    const request = ++operation.current
     setConverging(true)
-    window.setTimeout(() => {
-      try {
-        const validated = heatModelSchema.parse(model)
-        const report = runParametricSweep(validated)
-        setSweepReport(report)
-        setConvergenceReport(null)
-        setSelectedCase(0)
-        setResult(report.cases[0]!.result)
-        setResultSignature(modelSignature(validated))
-        setFrameIndex(0)
-        setView('results')
-        setSelected('sweep')
-        notify(`Parametric sweep completed: ${report.cases.length} cases`)
-      } catch (error) {
-        notify(error instanceof Error ? error.message : 'Unable to run parametric sweep', 'error')
-      } finally {
-        setConverging(false)
-      }
-    }, 40)
+    try {
+      const report = await getJobClient().sweep(model)
+      if (request !== operation.current) return
+      setSweepReport(report)
+      setConvergenceReport(null)
+      setSelectedCase(0)
+      setResult(report.cases[0]!.result)
+      setResultSignature(modelSignature(model))
+      setFrameIndex(0)
+      setView('results')
+      setSelected('sweep')
+      notify(`Parametric sweep completed: ${report.cases.length} cases`)
+    } catch (error) {
+      if (request === operation.current) notify(error instanceof Error ? error.message : 'Unable to run parametric sweep', 'error')
+    } finally {
+      if (request === operation.current) setConverging(false)
+    }
   }
   const loadModel = (next: HeatModel) => {
     setModel(next)
-    compute(next)
+    void compute(next)
   }
   const importGeometry = async (file: File) => {
     try {
@@ -170,9 +177,15 @@ function App() {
     if (format === 'html') downloadText('simulation-report.html', toHtmlReport(model, displayResult), 'text/html')
   }
 
+  useEffect(() => () => {
+    operation.current += 1
+    jobClient.current?.dispose()
+    jobClient.current = null
+  }, [])
+
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); compute() }
+      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') { event.preventDefault(); void compute() }
       if ((event.ctrlKey || event.metaKey) && event.key === 's') { event.preventDefault(); exportFile('json') }
     }
     window.addEventListener('keydown', handler)
@@ -327,7 +340,7 @@ function App() {
           <div className="metric accent"><span>MAXIMUM</span><strong>{displayResult ? metricMaximum.toExponential(3) : '—'} <small>{resultUnit}</small></strong></div>
           <div className="metric"><span>FIELD AVERAGE</span><strong>{displayResult ? metricAverage.toExponential(3) : '—'} <small>{resultUnit}</small></strong></div>
           <div className="metric"><span>MESH</span><strong>{displayResult ? displayResult.mesh.nodes.length.toLocaleString() : '—'} <small>nodes</small></strong></div>
-          <div className="metric solver-metric"><span>LINEAR SOLVER</span><strong className={displayResult?.converged ? 'converged' : 'not-converged'}>{displayResult?.converged ? 'Converged' : 'Check'} </strong><small>{displayResult ? `${displayResult.iterations} iterations · ${displayResult.relativeResidual.toExponential(1)} residual` : 'Not solved'}</small></div>
+          <div className="metric solver-metric"><span>LINEAR SOLVER</span><strong className={displayResult?.converged ? 'converged' : 'not-converged'}>{displayResult ? displayResult.solver === 'direct' ? 'DIRECT LDLᵀ' : 'ITERATIVE CG' : '—'}</strong><small>{displayResult ? `${displayResult.converged ? 'Converged' : 'Check residual'} · ${displayResult.solver === 'iterative' ? `${displayResult.iterations} iterations · ` : ''}${displayResult.relativeResidual.toExponential(1)} residual` : 'Not solved'}</small></div>
         </div>
       </section>
       <Inspector model={model} selected={selected} result={displayResult} stale={stale} converging={converging} onChange={updateModel} onImportGeometry={importGeometry} onExport={exportFile} onRunConvergence={runConvergence} onRunSweep={runSweep} />

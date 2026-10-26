@@ -13,7 +13,7 @@ El núcleo resuelve elasticidad isotrópica de pequeñas deformaciones con triá
 Kₑ = Aₑ Bᵀ D B
 ```
 
-Se ensambla un sistema disperso simétrico definido positivo cuando las condiciones de contorno eliminan los modos de cuerpo rígido. Las condiciones esenciales se aplican por eliminación y el sistema se resuelve con gradientes conjugados precondicionados por Jacobi. El residuo relativo mostrado pertenece al sistema algebraico; no es una cota del error físico.
+Se ensambla un sistema disperso simétrico definido positivo cuando las condiciones de contorno eliminan los modos de cuerpo rígido. Las condiciones esenciales se aplican por eliminación. El usuario puede seleccionar gradientes conjugados precondicionados por Jacobi o factorización directa LDLᵀ dispersa sin pivotaje para sistemas SPD. El residuo relativo mostrado se recalcula sobre el sistema algebraico original; no es una cota del error físico.
 
 Están disponibles tensión plana y deformación plana. En deformación plana, la tensión de von Mises incluye `σzz = ν(σxx + σyy)`; en tensión plana, `σzz = 0`. Las deformaciones y tensiones son constantes por elemento. La deformada del visor usa una escala automática exclusivamente gráfica y no modifica los resultados.
 
@@ -62,7 +62,7 @@ El ensayo de navegador importa un SVG en L, cambia de R1 a R2, comprueba 64 tri�
 
 ## Otros modelos y regresión
 
-La suite también comprueba conducción estacionaria y transitoria, electrostática, elasticidad, integración y sondas, migraciones de proyectos v1–v4, barridos, exportadores y estudios de convergencia. El script de navegador recorre presets, cambia cantidades de resultado, ejecuta estudios y verifica descargas CSV, VTK y HTML.
+La suite también comprueba conducción estacionaria y transitoria, electrostática, elasticidad, integración y sondas, migraciones de proyectos v1–v5, barridos, exportadores y estudios de convergencia. `solver.test.ts` verifica sistemas SPD, relleno de la factorización y rechazo de matrices no SPD. `direct.integration.test.ts` contrasta LDLᵀ con CG en las tres físicas y en un transitorio implícito breve, comparando campos y residuos. El script de navegador comprueba que los estudios crean un Web Worker, ejecuta cálculo y convergencia con LDLᵀ, verifica que una edición invalida una respuesta obsoleta y recorre presets, cantidades de resultado y descargas CSV, VTK y HTML.
 
 ## Semántica de convergencia y valores derivados
 
@@ -78,7 +78,8 @@ Para calor y potencial eléctrico, la integración P1 por elemento es exacta. La
 - Los barridos de anchura y altura solo están disponibles para rectángulos; no deforman vértices poligonales.
 - Sin grandes deformaciones, plasticidad, contacto, dinámica estructural, cargas de tracción no nulas ni acoplamiento multifísico.
 - Sin elementos de orden superior ni adaptación automática guiada por error. El refinamiento rojo es uniforme, no adaptativo.
-- La ejecución interactiva se realiza en el hilo principal del navegador.
+- El directo LDLᵀ no usa pivotaje ni reordenamiento y solo admite sistemas SPD; no es un solver general no simétrico o indefinido.
+- Los estudios usan un Web Worker, sin paralelismo multinúcleo ni WASM. Editar el modelo invalida lógicamente respuestas antiguas, pero no interrumpe de inmediato el cálculo ya iniciado.
 
 Ejecuta toda la verificación con:
 
