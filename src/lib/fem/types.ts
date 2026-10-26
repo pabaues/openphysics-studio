@@ -10,8 +10,18 @@ export type ElectricBoundaryCondition =
   | { type: 'potential'; value: number }
   | { type: 'zeroCharge' }
 
+export type StudyType = 'stationary' | 'transient'
+
+export type SweepParameter =
+  | 'geometry.width'
+  | 'geometry.height'
+  | 'material.conductivity'
+  | 'material.relativePermittivity'
+  | 'physics.heatSource'
+  | 'electrostatics.chargeDensity'
+
 export interface HeatModel {
-  schemaVersion: 2
+  schemaVersion: 3
   name: string
   activePhysics: ActivePhysics
   geometry: {
@@ -21,6 +31,8 @@ export interface HeatModel {
   material: {
     conductivity: number
     relativePermittivity: number
+    density: number
+    heatCapacity: number
   }
   physics: {
     heatSource: number
@@ -41,8 +53,19 @@ export interface HeatModel {
     ny: number
   }
   study: {
+    type: StudyType
     tolerance: number
     maxIterations: number
+  }
+  transient: {
+    initialTemperature: number
+    duration: number
+    timeSteps: number
+    outputSteps: number
+  }
+  sweep: {
+    parameter: SweepParameter
+    values: number[]
   }
   convergence: {
     levels: number
@@ -84,10 +107,23 @@ export interface BaseSimulationResult {
   average: number
 }
 
+export interface TransientFrame {
+  time: number
+  temperature: number[]
+  minimum: number
+  maximum: number
+  average: number
+}
+
 export interface SimulationResult extends BaseSimulationResult {
   physics: 'heat'
   temperature: number[]
   flux: HeatFlux[]
+  transient?: {
+    frames: TransientFrame[]
+    timeSteps: number
+    conductivity: number
+  }
 }
 
 export interface ElectricSimulationResult extends BaseSimulationResult {
@@ -122,11 +158,11 @@ export interface ConvergenceReport {
 }
 
 export const defaultModel: HeatModel = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   name: 'Thermal plate study',
   activePhysics: 'heat',
   geometry: { width: 0.1, height: 0.05 },
-  material: { conductivity: 45, relativePermittivity: 1 },
+  material: { conductivity: 45, relativePermittivity: 1, density: 7850, heatCapacity: 475 },
   physics: {
     heatSource: 250000,
     leftTemperature: 20,
@@ -142,6 +178,8 @@ export const defaultModel: HeatModel = {
     bottom: { type: 'zeroCharge' },
   },
   mesh: { nx: 28, ny: 16 },
-  study: { tolerance: 1e-9, maxIterations: 2000 },
+  study: { type: 'stationary', tolerance: 1e-9, maxIterations: 2000 },
+  transient: { initialTemperature: 20, duration: 10, timeSteps: 100, outputSteps: 20 },
+  sweep: { parameter: 'material.conductivity', values: [15, 45, 100] },
   convergence: { levels: 3 },
 }

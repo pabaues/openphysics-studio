@@ -1,6 +1,7 @@
-import { Download, FileJson, Info, LoaderCircle, ShieldCheck, TrendingUp } from 'lucide-react'
+import { Download, FileJson, FileText, Info, LoaderCircle, Play, ShieldCheck, TrendingUp } from 'lucide-react'
 import type { NodeId } from './ModelTree'
-import type { AnySimulationResult, BoundaryCondition, ElectricBoundaryCondition, HeatModel } from '@/lib/fem/types'
+import { sweepParameters } from '@/lib/fem/sweep'
+import type { AnySimulationResult, BoundaryCondition, ElectricBoundaryCondition, HeatModel, SweepParameter } from '@/lib/fem/types'
 
 interface InspectorProps {
   model: HeatModel
@@ -9,8 +10,9 @@ interface InspectorProps {
   stale: boolean
   converging: boolean
   onChange: (model: HeatModel) => void
-  onExport: (format: 'csv' | 'vtk' | 'json') => void
+  onExport: (format: 'csv' | 'vtk' | 'json' | 'derived' | 'html' | 'sweep') => void
   onRunConvergence: () => void
+  onRunSweep: () => void
 }
 
 function NumberField({ label, value, unit, min, max, step = 1, onChange }: {
@@ -45,7 +47,7 @@ function ElectricBoundary({ condition, onChange }: { condition: ElectricBoundary
   </>
 }
 
-export function Inspector({ model, selected, result, stale, converging, onChange, onExport, onRunConvergence }: InspectorProps) {
+export function Inspector({ model, selected, result, stale, converging, onChange, onExport, onRunConvergence, onRunSweep }: InspectorProps) {
   const updatePhysics = (patch: Partial<HeatModel['physics']>) => onChange({ ...model, activePhysics: 'heat', physics: { ...model.physics, ...patch } })
   const updateElectric = (patch: Partial<HeatModel['electrostatics']>) => onChange({ ...model, activePhysics: 'electrostatics', electrostatics: { ...model.electrostatics, ...patch } })
   const electricBoundary = selected.replace('electric', '').toLowerCase() as 'left' | 'right' | 'top' | 'bottom'
@@ -65,12 +67,14 @@ export function Inspector({ model, selected, result, stale, converging, onChange
 
         {selected === 'material' && <Section eyebrow="Materials" title="Isotropic solid" description="Constant properties shared by the available physics interfaces.">
           <NumberField label="Thermal conductivity" value={model.material.conductivity} unit="W/(m·K)" min={0.000001} step={1} onChange={(conductivity) => onChange({ ...model, material: { ...model.material, conductivity } })} />
+          <NumberField label="Density" value={model.material.density} unit="kg/m³" min={0.000001} step={100} onChange={(density) => onChange({ ...model, material: { ...model.material, density } })} />
+          <NumberField label="Heat capacity" value={model.material.heatCapacity} unit="J/(kg·K)" min={0.000001} step={25} onChange={(heatCapacity) => onChange({ ...model, material: { ...model.material, heatCapacity } })} />
           <NumberField label="Relative permittivity" value={model.material.relativePermittivity} unit="εᵣ" min={0.000001} step={0.5} onChange={(relativePermittivity) => onChange({ ...model, material: { ...model.material, relativePermittivity } })} />
           <div className="property-row"><span>Model</span><strong>Linear, isotropic</strong></div><div className="property-row"><span>Domain</span><strong>All domains</strong></div>
         </Section>}
 
-        {selected === 'physics' && <Section eyebrow="Heat transfer in solids" title="Energy balance" description="Stationary conduction with a uniform volumetric heat source.">
-          <div className="equation-box primary">∇ · (−k∇T) = Q</div>
+        {selected === 'physics' && <Section eyebrow="Heat transfer in solids" title="Energy balance" description="Stationary or transient conduction with a uniform volumetric heat source.">
+          <div className="equation-box primary">{model.study.type === 'transient' ? 'ρCₚ ∂T/∂t + ∇ · (−k∇T) = Q' : '∇ · (−k∇T) = Q'}</div>
           <NumberField label="Heat source Q" value={model.physics.heatSource} unit="W/m³" min={-1e12} max={1e12} step={10000} onChange={(heatSource) => updatePhysics({ heatSource })} />
           <div className="property-row"><span>Discretization</span><strong>Linear triangular FEM</strong></div>
         </Section>}
@@ -99,10 +103,32 @@ export function Inspector({ model, selected, result, stale, converging, onChange
           <div className="mesh-summary"><strong>{((model.mesh.nx + 1) * (model.mesh.ny + 1)).toLocaleString()}</strong><span>nodes</span><strong>{(2 * model.mesh.nx * model.mesh.ny).toLocaleString()}</strong><span>triangles</span></div>
         </Section>}
 
-        {selected === 'study' && <Section eyebrow="Study 1" title="Stationary solver" description="Sparse symmetric system solved with Jacobi-preconditioned conjugate gradients.">
+        {selected === 'study' && <Section eyebrow="Study 1" title={model.study.type === 'transient' ? 'Transient solver' : 'Stationary solver'} description="Sparse systems solved with Jacobi-preconditioned conjugate gradients and reported residuals.">
+          <label className="field-label"><span>Study type</span><select aria-label="Study type" value={model.study.type} onChange={(event) => {
+            const type = event.target.value as HeatModel['study']['type']
+            onChange({ ...model, activePhysics: type === 'transient' ? 'heat' : model.activePhysics, study: { ...model.study, type } })
+          }}><option value="stationary">Stationary</option><option value="transient">Transient heat · implicit Euler</option></select></label>
+          {model.study.type === 'transient' && <>
+            <NumberField label="Initial temperature" value={model.transient.initialTemperature} unit="°C" min={-273.15} max={10000} onChange={(initialTemperature) => onChange({ ...model, transient: { ...model.transient, initialTemperature } })} />
+            <NumberField label="Duration" value={model.transient.duration} unit="s" min={0.000001} step={1} onChange={(duration) => onChange({ ...model, transient: { ...model.transient, duration } })} />
+            <NumberField label="Time steps" value={model.transient.timeSteps} min={1} max={10000} step={10} onChange={(timeSteps) => onChange({ ...model, transient: { ...model.transient, timeSteps: Math.round(timeSteps) } })} />
+            <NumberField label="Output intervals" value={model.transient.outputSteps} min={1} max={100} step={1} onChange={(outputSteps) => onChange({ ...model, transient: { ...model.transient, outputSteps: Math.round(outputSteps) } })} />
+            <div className="solver-note neutral"><ShieldCheck size={16} /><span>First-order implicit Euler with consistent P1 mass matrices. Electrostatics remains stationary.</span></div>
+          </>}
           <label className="field-label"><span>Relative tolerance</span><select value={model.study.tolerance} onChange={(e) => onChange({ ...model, study: { ...model.study, tolerance: Number(e.target.value) } })}><option value={1e-6}>10⁻⁶</option><option value={1e-9}>10⁻⁹</option><option value={1e-12}>10⁻¹²</option></select></label>
           <NumberField label="Maximum iterations" value={model.study.maxIterations} min={10} max={20000} step={100} onChange={(maxIterations) => onChange({ ...model, study: { ...model.study, maxIterations } })} />
           <div className="solver-note"><ShieldCheck size={16} /><span>Residual-based convergence is always reported.</span></div>
+        </Section>}
+
+        {selected === 'sweep' && <Section eyebrow="Study 1 · Automation" title="Parametric sweep" description="Solve independent model copies for 2–12 values and compare derived quantities.">
+          <label className="field-label"><span>Parameter</span><select aria-label="Sweep parameter" value={model.sweep.parameter} onChange={(event) => onChange({ ...model, sweep: { ...model.sweep, parameter: event.target.value as SweepParameter } })}>{Object.entries(sweepParameters).filter(([, metadata]) => metadata.physics === 'both' || metadata.physics === model.activePhysics).map(([parameter, metadata]) => <option key={parameter} value={parameter}>{metadata.label}</option>)}</select></label>
+          <label className="field-label"><span>Values · comma separated</span><input key={`${model.sweep.parameter}-${model.sweep.values.join(',')}`} aria-label="Sweep values" className="text-field" defaultValue={model.sweep.values.join(', ')} onBlur={(event) => {
+            const values = event.target.value.split(',').map((value) => Number(value.trim())).filter((value) => Number.isFinite(value))
+            onChange({ ...model, sweep: { ...model.sweep, values } })
+          }} /></label>
+          <div className="property-row"><span>Selected parameter</span><strong>{sweepParameters[model.sweep.parameter].unit || 'dimensionless'}</strong></div>
+          <button className="study-button" disabled={converging} onClick={onRunSweep}><Play size={15} />Run parametric sweep</button>
+          <div className="solver-note neutral"><ShieldCheck size={16} /><span>Every case is schema-validated and solved independently. Select a result row to inspect its field.</span></div>
         </Section>}
 
         {selected === 'convergence' && <Section eyebrow="Study 1 · Automation" title="Mesh convergence" description="Solve successively refined ×2 grids and estimate self-convergence from their differences.">
@@ -117,6 +143,8 @@ export function Inspector({ model, selected, result, stale, converging, onChange
         {selected === 'results' && <Section eyebrow="Results" title="Export and provenance" description="Nodal values and mesh connectivity use open, documented formats.">
           <button className="export-button" disabled={!result} onClick={() => onExport('csv')}><Download size={15} /><span>Export {resultIsElectric ? 'potential' : 'temperature'}</span><b>CSV</b></button>
           <button className="export-button" disabled={!result} onClick={() => onExport('vtk')}><Download size={15} /><span>Export field + mesh</span><b>VTK</b></button>
+          <button className="export-button" disabled={!result} onClick={() => onExport('derived')}><Download size={15} /><span>Export derived values</span><b>CSV</b></button>
+          <button className="export-button" disabled={!result} onClick={() => onExport('html')}><FileText size={15} /><span>Export simulation report</span><b>HTML</b></button>
           <button className="export-button" onClick={() => onExport('json')}><FileJson size={15} /><span>Export model</span><b>JSON</b></button>
           {result && <div className="property-row"><span>Dataset</span><strong>{stale ? 'Out of date' : resultIsElectric ? 'Electric solution' : 'Thermal solution'}</strong></div>}
         </Section>}

@@ -21,16 +21,20 @@ import {
 import { ModelTree, type NodeId } from '@/components/ModelTree'
 import { Inspector } from '@/components/Inspector'
 import { ConvergencePanel } from '@/components/ConvergencePanel'
+import { DerivedValuesPanel } from '@/components/DerivedValuesPanel'
+import { SweepPanel } from '@/components/SweepPanel'
 import { SimulationCanvas, type ResultQuantity, type ViewMode } from '@/components/SimulationCanvas'
-import { downloadText, toCsv, toVtk } from '@/lib/fem/exporters'
-import { heatModelSchema, parseProjectJson } from '@/lib/fem/project'
+import { downloadText, toCsv, toDerivedCsv, toHtmlReport, toSweepCsv, toVtk } from '@/lib/fem/exporters'
+import { heatModelSchema, modelSignature, parseProjectJson } from '@/lib/fem/project'
 import { runConvergenceStudy } from '@/lib/fem/convergence'
+import { heatResultAtTime } from '@/lib/fem/heat'
+import { runParametricSweep, type SweepReport } from '@/lib/fem/sweep'
 import { solveActiveModel } from '@/lib/fem/study'
 import { defaultModel, type ActivePhysics, type AnySimulationResult, type ConvergenceReport, type HeatModel } from '@/lib/fem/types'
 import './App.css'
 
 const initialModel = structuredClone(defaultModel)
-const initialSignature = JSON.stringify(initialModel)
+const initialSignature = modelSignature(initialModel)
 const thermalNodes: NodeId[] = ['physics', 'left', 'right', 'top', 'bottom']
 const electricNodes: NodeId[] = ['electrostatics', 'electricLeft', 'electricRight', 'electricTop', 'electricBottom']
 
@@ -39,6 +43,9 @@ function App() {
   const [result, setResult] = useState<AnySimulationResult | null>(() => solveActiveModel(initialModel))
   const [resultSignature, setResultSignature] = useState(initialSignature)
   const [convergenceReport, setConvergenceReport] = useState<ConvergenceReport | null>(null)
+  const [sweepReport, setSweepReport] = useState<SweepReport | null>(null)
+  const [selectedCase, setSelectedCase] = useState(0)
+  const [frameIndex, setFrameIndex] = useState(0)
   const [selected, setSelected] = useState<NodeId>('results')
   const [view, setView] = useState<ViewMode>('results')
   const [quantity, setQuantity] = useState<ResultQuantity>('temperature')
@@ -47,7 +54,7 @@ function App() {
   const [converging, setConverging] = useState(false)
   const [toast, setToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
-  const stale = JSON.stringify(model) !== resultSignature
+  const stale = modelSignature(model) !== resultSignature
   const busy = computing || converging
 
   const notify = (text: string, type: 'success' | 'error' = 'success') => {
@@ -57,6 +64,8 @@ function App() {
   const updateModel = (next: HeatModel) => {
     setModel(next)
     setConvergenceReport(null)
+    setSweepReport(null)
+    setFrameIndex(0)
   }
   const compute = (candidate = model) => {
     setComputing(true)
@@ -65,8 +74,10 @@ function App() {
         const validated = heatModelSchema.parse(candidate)
         const next = solveActiveModel(validated)
         setResult(next)
-        setResultSignature(JSON.stringify(validated))
+        setResultSignature(modelSignature(validated))
         setConvergenceReport(null)
+        setSweepReport(null)
+        setFrameIndex(next.physics === 'heat' && next.transient ? next.transient.frames.length - 1 : 0)
         setView('results')
         setSelected('results')
         notify(next.converged ? `Solution converged in ${next.iterations} iterations` : 'Solver stopped before reaching tolerance', next.converged ? 'success' : 'error')
@@ -84,8 +95,10 @@ function App() {
         const validated = heatModelSchema.parse(model)
         const report = runConvergenceStudy(validated)
         setConvergenceReport(report)
+        setSweepReport(null)
         setResult(report.finest)
-        setResultSignature(JSON.stringify(validated))
+        setResultSignature(modelSignature(validated))
+        setFrameIndex(report.finest.physics === 'heat' && report.finest.transient ? report.finest.transient.frames.length - 1 : 0)
         setView('results')
         setSelected('results')
         notify(report.converged ? `Convergence study completed: ${report.entries.length} grids` : 'A grid did not reach solver tolerance', report.converged ? 'success' : 'error')
@@ -96,19 +109,48 @@ function App() {
       }
     }, 40)
   }
+  const runSweep = () => {
+    setConverging(true)
+    window.setTimeout(() => {
+      try {
+        const validated = heatModelSchema.parse(model)
+        const report = runParametricSweep(validated)
+        setSweepReport(report)
+        setConvergenceReport(null)
+        setSelectedCase(0)
+        setResult(report.cases[0]!.result)
+        setResultSignature(modelSignature(validated))
+        setFrameIndex(0)
+        setView('results')
+        setSelected('sweep')
+        notify(`Parametric sweep completed: ${report.cases.length} cases`)
+      } catch (error) {
+        notify(error instanceof Error ? error.message : 'Unable to run parametric sweep', 'error')
+      } finally {
+        setConverging(false)
+      }
+    }, 40)
+  }
   const loadModel = (next: HeatModel) => {
     setModel(next)
     compute(next)
   }
-  const exportFile = (format: 'csv' | 'vtk' | 'json') => {
+  const displayResult = result?.physics === 'heat' ? heatResultAtTime(result, frameIndex) : result
+  const exportFile = (format: 'csv' | 'vtk' | 'json' | 'derived' | 'html' | 'sweep') => {
     if (format === 'json') {
       downloadText(`${model.name.replaceAll(' ', '-').toLowerCase()}.opmodel.json`, JSON.stringify(model, null, 2), 'application/json')
       return
     }
-    if (!result) return
-    const stem = result.physics === 'heat' ? 'temperature-field' : 'electric-potential'
-    if (format === 'csv') downloadText(`${stem}.csv`, toCsv(result), 'text/csv')
-    if (format === 'vtk') downloadText(`${stem}.vtk`, toVtk(result))
+    if (format === 'sweep' && sweepReport) {
+      downloadText('parametric-sweep.csv', toSweepCsv(sweepReport), 'text/csv')
+      return
+    }
+    if (!displayResult) return
+    const stem = displayResult.physics === 'heat' ? 'temperature-field' : 'electric-potential'
+    if (format === 'csv') downloadText(`${stem}.csv`, toCsv(displayResult), 'text/csv')
+    if (format === 'vtk') downloadText(`${stem}.vtk`, toVtk(displayResult))
+    if (format === 'derived') downloadText('derived-values.csv', toDerivedCsv(displayResult), 'text/csv')
+    if (format === 'html') downloadText('simulation-report.html', toHtmlReport(model, displayResult), 'text/html')
   }
 
   useEffect(() => {
@@ -120,14 +162,26 @@ function App() {
     return () => window.removeEventListener('keydown', handler)
   })
 
+  const modelForPhysics = (physics: ActivePhysics): HeatModel => {
+    const common = ['geometry.width', 'geometry.height']
+    const applicable = physics === 'heat'
+      ? [...common, 'material.conductivity', 'physics.heatSource']
+      : [...common, 'material.relativePermittivity', 'electrostatics.chargeDensity']
+    return {
+      ...model,
+      activePhysics: physics,
+      study: { ...model.study, type: physics === 'electrostatics' ? 'stationary' : model.study.type },
+      sweep: { ...model.sweep, parameter: applicable.includes(model.sweep.parameter) ? model.sweep.parameter : physics === 'heat' ? 'material.conductivity' : 'material.relativePermittivity' },
+    }
+  }
   const changePhysics = (physics: ActivePhysics) => {
-    updateModel({ ...model, activePhysics: physics })
+    updateModel(modelForPhysics(physics))
     setQuantity(physics === 'heat' ? 'temperature' : 'potential')
     setSelected(physics === 'heat' ? 'physics' : 'electrostatics')
   }
   const selectNode = (node: NodeId) => {
-    if (thermalNodes.includes(node) && model.activePhysics !== 'heat') updateModel({ ...model, activePhysics: 'heat' })
-    if (electricNodes.includes(node) && model.activePhysics !== 'electrostatics') updateModel({ ...model, activePhysics: 'electrostatics' })
+    if (thermalNodes.includes(node) && model.activePhysics !== 'heat') updateModel(modelForPhysics('heat'))
+    if (electricNodes.includes(node) && model.activePhysics !== 'electrostatics') updateModel(modelForPhysics('electrostatics'))
     if (thermalNodes.includes(node)) setQuantity('temperature')
     if (electricNodes.includes(node)) setQuantity('potential')
     setSelected(node)
@@ -210,17 +264,24 @@ function App() {
           </>}
           <button className="icon-button" title="Reset model" onClick={() => loadModel(structuredClone(defaultModel))}><RotateCcw size={14} /></button>
         </div>
-        <SimulationCanvas model={model} result={result} view={view} quantity={quantity} showMesh={showMesh} stale={stale} />
+        <SimulationCanvas model={model} result={displayResult} view={view} quantity={quantity} showMesh={showMesh} stale={stale} />
+        {sweepReport && view === 'results' && <SweepPanel report={sweepReport} selectedCase={selectedCase} onSelect={(index) => {
+          const selectedResult = sweepReport.cases[index]!.result
+          setSelectedCase(index)
+          setResult(selectedResult)
+          setFrameIndex(selectedResult.physics === 'heat' && selectedResult.transient ? selectedResult.transient.frames.length - 1 : 0)
+        }} onClose={() => setSweepReport(null)} onExport={() => exportFile('sweep')} />}
         {convergenceReport && view === 'results' && <ConvergencePanel report={convergenceReport} onClose={() => setConvergenceReport(null)} />}
+        {displayResult && view === 'results' && <DerivedValuesPanel result={displayResult} frameIndex={frameIndex} onFrameChange={setFrameIndex} />}
         <div className="metrics-strip">
-          <div className="metric"><span>MINIMUM</span><strong>{result ? result.minimum.toFixed(3) : '—'} <small>{resultUnit}</small></strong></div>
-          <div className="metric accent"><span>MAXIMUM</span><strong>{result ? result.maximum.toFixed(3) : '—'} <small>{resultUnit}</small></strong></div>
-          <div className="metric"><span>AVERAGE</span><strong>{result ? result.average.toFixed(3) : '—'} <small>{resultUnit}</small></strong></div>
-          <div className="metric"><span>MESH</span><strong>{result ? result.mesh.nodes.length.toLocaleString() : '—'} <small>nodes</small></strong></div>
-          <div className="metric solver-metric"><span>LINEAR SOLVER</span><strong className={result?.converged ? 'converged' : 'not-converged'}>{result?.converged ? 'Converged' : 'Check'} </strong><small>{result ? `${result.iterations} iterations · ${result.relativeResidual.toExponential(1)} residual` : 'Not solved'}</small></div>
+          <div className="metric"><span>MINIMUM</span><strong>{displayResult ? displayResult.minimum.toFixed(3) : '—'} <small>{resultUnit}</small></strong></div>
+          <div className="metric accent"><span>MAXIMUM</span><strong>{displayResult ? displayResult.maximum.toFixed(3) : '—'} <small>{resultUnit}</small></strong></div>
+          <div className="metric"><span>NODAL AVERAGE</span><strong>{displayResult ? displayResult.average.toFixed(3) : '—'} <small>{resultUnit}</small></strong></div>
+          <div className="metric"><span>MESH</span><strong>{displayResult ? displayResult.mesh.nodes.length.toLocaleString() : '—'} <small>nodes</small></strong></div>
+          <div className="metric solver-metric"><span>LINEAR SOLVER</span><strong className={displayResult?.converged ? 'converged' : 'not-converged'}>{displayResult?.converged ? 'Converged' : 'Check'} </strong><small>{displayResult ? `${displayResult.iterations} iterations · ${displayResult.relativeResidual.toExponential(1)} residual` : 'Not solved'}</small></div>
         </div>
       </section>
-      <Inspector model={model} selected={selected} result={result} stale={stale} converging={converging} onChange={updateModel} onExport={exportFile} onRunConvergence={runConvergence} />
+      <Inspector model={model} selected={selected} result={displayResult} stale={stale} converging={converging} onChange={updateModel} onExport={exportFile} onRunConvergence={runConvergence} onRunSweep={runSweep} />
     </main>
 
     <footer className="status-bar"><span className={`status-indicator ${result?.converged && !stale ? 'ok' : ''}`} /><span>{converging ? 'Running successive mesh studies…' : computing ? 'Assembling and solving…' : stale ? 'Results need updating' : result?.converged ? 'Study completed successfully' : 'Ready'}</span><span className="status-divider">|</span><span>2D · {physicsName}</span><div className="header-spacer" /><Gauge size={12} /><span>{result ? `${result.solveTimeMs.toFixed(1)} ms` : '—'}</span><span className="status-divider">|</span><span>Local session</span><Download size={12} /><span>Open data</span></footer>

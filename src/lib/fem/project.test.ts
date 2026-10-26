@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { parseProjectJson } from './project'
+import { modelSignature, parseProjectJson } from './project'
 import { defaultModel } from './types'
 
 describe('project persistence', () => {
   it('round-trips the current multiphysics schema', () => {
     const parsed = parseProjectJson(JSON.stringify(defaultModel))
     expect(parsed).toEqual(defaultModel)
+  })
+
+  it('uses signatures independent of schema key insertion order', () => {
+    const reordered = structuredClone(defaultModel)
+    reordered.study = { tolerance: reordered.study.tolerance, maxIterations: reordered.study.maxIterations, type: reordered.study.type }
+    expect(JSON.stringify(reordered)).not.toBe(JSON.stringify(defaultModel))
+    expect(modelSignature(reordered)).toBe(modelSignature(defaultModel))
   })
 
   it('migrates thermal-only version 1 projects additively', () => {
@@ -19,9 +26,29 @@ describe('project persistence', () => {
       study: defaultModel.study,
     }
     const parsed = parseProjectJson(JSON.stringify(legacy))
-    expect(parsed.schemaVersion).toBe(2)
+    expect(parsed.schemaVersion).toBe(3)
     expect(parsed.activePhysics).toBe('heat')
     expect(parsed.material.relativePermittivity).toBe(1)
+    expect(parsed.material.density).toBe(defaultModel.material.density)
+    expect(parsed.study.type).toBe('stationary')
     expect(parsed.electrostatics).toEqual(defaultModel.electrostatics)
+  })
+
+  it('migrates version 2 projects without replacing their settings', () => {
+    const legacy = {
+      ...structuredClone(defaultModel),
+      schemaVersion: 2,
+      material: { conductivity: 123, relativePermittivity: 4 },
+      study: { tolerance: 1e-6, maxIterations: 500 },
+      transient: undefined,
+      sweep: undefined,
+    }
+    delete legacy.transient
+    delete legacy.sweep
+    const parsed = parseProjectJson(JSON.stringify(legacy))
+    expect(parsed.schemaVersion).toBe(3)
+    expect(parsed.material.conductivity).toBe(123)
+    expect(parsed.study).toEqual({ type: 'stationary', tolerance: 1e-6, maxIterations: 500 })
+    expect(parsed.transient).toEqual(defaultModel.transient)
   })
 })

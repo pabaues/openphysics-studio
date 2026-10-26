@@ -30,6 +30,7 @@ export type NodeId =
   | 'mesh'
   | 'study'
   | 'convergence'
+  | 'sweep'
   | 'results'
 
 interface ModelTreeProps {
@@ -75,6 +76,7 @@ export function ModelTree({ selected, onSelect, hasResults, activePhysics }: Mod
         <button className={`tree-item ${selected === 'study' ? 'selected' : ''}`} onClick={() => onSelect('study')}><Play size={15} /><span>Study 1</span></button>
         <div className="tree-children">
           <button className={`tree-item child ${selected === 'convergence' ? 'selected' : ''}`} onClick={() => onSelect('convergence')}><TrendingUp size={13} /><span>Mesh convergence</span></button>
+          <button className={`tree-item child ${selected === 'sweep' ? 'selected' : ''}`} onClick={() => onSelect('sweep')}><BarChart3 size={13} /><span>Parametric sweep</span></button>
         </div>
         <button className={`tree-item results-node ${selected === 'results' ? 'selected' : ''}`} onClick={() => onSelect('results')}><BarChart3 size={15} /><span>Results</span><span className={`result-state ${hasResults ? 'ready' : ''}`} /></button>
       </div>

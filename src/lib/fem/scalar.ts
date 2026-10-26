@@ -11,12 +11,23 @@ export interface ScalarProblem {
   source: number
   tolerance: number
   maxIterations: number
+  reactionCoefficient?: number
+  reactionSource?: number[]
+  initialValues?: number[]
   prescribedValue: (x: number, y: number) => number | undefined
 }
 
 export interface ScalarSolution extends BaseSimulationResult {
   values: number[]
   gradient: VectorValue[]
+}
+
+export interface ScalarAssembly {
+  rows: SparseRow[]
+  rhs: number[]
+  prescribed: number[]
+  freeToGlobal: number[]
+  globalToFree: number[]
 }
 
 export function near(a: number, b: number, scale: number): boolean {
@@ -37,27 +48,25 @@ export function triangleGeometry(mesh: RectangularMesh, triangle: Triangle) {
   }
 }
 
-/** Solves ∇ · (−c∇u) = Q with Dirichlet elimination and natural zero flux. */
-export function solveScalar(problem: ScalarProblem): ScalarSolution {
-  const started = performance.now()
-  const mesh = createRectangularMesh(problem.width, problem.height, problem.nx, problem.ny)
+/** Assembles K + aM and F + aM·u with consistent P1 element mass matrices. */
+export function assembleScalar(problem: ScalarProblem, mesh: RectangularMesh): ScalarAssembly {
   const count = mesh.nodes.length
-  const values = Array<number>(count).fill(0)
+  if (problem.reactionSource && problem.reactionSource.length !== count) throw new Error('Reaction source size does not match the mesh.')
+  const prescribed = problem.initialValues ? [...problem.initialValues] : Array<number>(count).fill(0)
   const freeToGlobal: number[] = []
   const globalToFree = Array<number>(count).fill(-1)
-
   mesh.nodes.forEach((node, index) => {
-    const prescribed = problem.prescribedValue(node.x, node.y)
-    if (prescribed === undefined) {
+    const fixed = problem.prescribedValue(node.x, node.y)
+    if (fixed === undefined) {
       globalToFree[index] = freeToGlobal.length
       freeToGlobal.push(index)
     } else {
-      values[index] = prescribed
+      prescribed[index] = fixed
     }
   })
-
   const rowMaps = freeToGlobal.map(() => new Map<number, number>())
   const rhs = Array<number>(freeToGlobal.length).fill(0)
+  const reaction = problem.reactionCoefficient ?? 0
   for (const triangle of mesh.triangles) {
     const { area, b, c } = triangleGeometry(mesh, triangle)
     for (let localI = 0; localI < 3; localI += 1) {
@@ -67,32 +76,29 @@ export function solveScalar(problem: ScalarProblem): ScalarSolution {
       rhs[freeI]! += (problem.source * area) / 3
       for (let localJ = 0; localJ < 3; localJ += 1) {
         const globalJ = triangle[localJ]!
-        const value = (problem.coefficient / (4 * area)) *
+        const stiffness = (problem.coefficient / (4 * area)) *
           (b[localI]! * b[localJ]! + c[localI]! * c[localJ]!)
+        const mass = reaction * area * (localI === localJ ? 1 / 6 : 1 / 12)
+        const value = stiffness + mass
         const freeJ = globalToFree[globalJ]!
         if (freeJ >= 0) {
           rowMaps[freeI]!.set(freeJ, (rowMaps[freeI]!.get(freeJ) ?? 0) + value)
         } else {
-          rhs[freeI]! -= value * values[globalJ]!
+          rhs[freeI]! -= value * prescribed[globalJ]!
         }
+        if (problem.reactionSource) rhs[freeI]! += mass * problem.reactionSource[globalJ]!
       }
     }
   }
-
   const rows: SparseRow[] = rowMaps.map((entries, rowIndex) => {
     const indices = [...entries.keys()].sort((a, b) => a - b)
-    return {
-      indices,
-      values: indices.map((index) => entries.get(index)!),
-      diagonal: entries.get(rowIndex) ?? 0,
-    }
+    return { indices, values: indices.map((index) => entries.get(index)!), diagonal: entries.get(rowIndex) ?? 0 }
   })
-  const solution = solveConjugateGradient(rows, rhs, problem.tolerance, problem.maxIterations)
-  solution.values.forEach((value, freeIndex) => {
-    values[freeToGlobal[freeIndex]!] = value
-  })
+  return { rows, rhs, prescribed, freeToGlobal, globalToFree }
+}
 
-  const gradient = mesh.triangles.map((triangle) => {
+export function scalarGradient(mesh: RectangularMesh, values: number[]): VectorValue[] {
+  return mesh.triangles.map((triangle) => {
     const { area, b, c } = triangleGeometry(mesh, triangle)
     let x = 0
     let y = 0
@@ -104,17 +110,27 @@ export function solveScalar(problem: ScalarProblem): ScalarSolution {
     y /= 2 * area
     return { x, y, magnitude: Math.hypot(x, y) }
   })
+}
 
+/** Solves ∇ · (−c∇u) + au = Q + f with Dirichlet elimination. */
+export function solveScalar(problem: ScalarProblem, existingMesh?: RectangularMesh): ScalarSolution {
+  const started = performance.now()
+  const mesh = existingMesh ?? createRectangularMesh(problem.width, problem.height, problem.nx, problem.ny)
+  const assembly = assembleScalar(problem, mesh)
+  const initial = problem.initialValues?.filter((_, index) => assembly.globalToFree[index]! >= 0)
+  const solution = solveConjugateGradient(assembly.rows, assembly.rhs, problem.tolerance, problem.maxIterations, initial)
+  const values = assembly.prescribed
+  solution.values.forEach((value, freeIndex) => { values[assembly.freeToGlobal[freeIndex]!] = value })
   return {
     mesh,
     values,
-    gradient,
+    gradient: scalarGradient(mesh, values),
     converged: solution.converged,
     iterations: solution.iterations,
     relativeResidual: solution.relativeResidual,
     solveTimeMs: performance.now() - started,
     minimum: Math.min(...values),
     maximum: Math.max(...values),
-    average: values.reduce((sum, value) => sum + value, 0) / count,
+    average: values.reduce((sum, value) => sum + value, 0) / values.length,
   }
 }

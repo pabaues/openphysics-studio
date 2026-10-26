@@ -33,13 +33,15 @@ export function solveConjugateGradient(
   rhs: number[],
   tolerance: number,
   maxIterations: number,
+  initial?: number[],
 ): IterativeSolution {
   const size = rhs.length
   if (size === 0) {
     return { values: [], converged: true, iterations: 0, relativeResidual: 0 }
   }
+  if (initial && initial.length !== size) throw new Error('Initial guess size does not match the linear system.')
 
-  const x = Array<number>(size).fill(0)
+  const x = initial ? [...initial] : Array<number>(size).fill(0)
   const ax = multiply(rows, x)
   const r = rhs.map((value, i) => value - ax[i]!)
   const rhsNorm = Math.sqrt(dot(rhs, rhs))
