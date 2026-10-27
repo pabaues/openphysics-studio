@@ -7,7 +7,11 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   verify:
@@ -22,3 +26,47 @@ jobs:
       - run: npm test
       - run: npm run lint
       - run: npm run build
+
+  desktop-release:
+    name: Windows portable release
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Build Windows portable executable
+        run: npm run build:desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Test packaged desktop application
+        run: npm run test:desktop
+        env:
+          DESKTOP_EXECUTABLE: ${{ github.workspace }}\release\latest\win-1-unpacked\OpenPhysics Studio.exe
+      - name: Generate SHA-256 checksum
+        shell: pwsh
+        run: |
+          $file = Get-Item release/latest/OpenPhysics-Studio-Windows-x64.exe
+          $checksum = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLower()
+          "$checksum  $($file.Name)" | Out-File "$($file.FullName).sha256" -Encoding ascii
+      - name: Update rolling latest release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: latest
+          target_commitish: ${{ github.sha }}
+          name: OpenPhysics Studio — latest Windows build
+          body: |
+            Portable Windows x64 build generated and tested by CI.
+            Commit: ${{ github.sha }}
+            Download the .exe, verify the SHA-256 checksum if desired, and double-click to run. No Node.js installation is required.
+          prerelease: true
+          make_latest: false
+          overwrite_files: true
+          fail_on_unmatched_files: true
+          files: |
+            release/latest/OpenPhysics-Studio-Windows-x64.exe
+            release/latest/OpenPhysics-Studio-Windows-x64.exe.sha256

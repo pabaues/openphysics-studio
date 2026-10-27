@@ -1,4 +1,4 @@
-# Comparativa funcional: OpenPhysics Studio 0.8 y COMSOL Multiphysics
+# Comparativa funcional: OpenPhysics Studio 0.9 y COMSOL Multiphysics
 
 Fecha de revisión: 27 de octubre de 2026.
 
@@ -8,9 +8,10 @@ OpenPhysics Studio es un prototipo comunitario 2D desarrollado mediante ingenier
 
 ## Matriz de diferencias
 
-| Área | COMSOL Multiphysics | OpenPhysics Studio 0.8 | Brecha pendiente |
+| Área | COMSOL Multiphysics | OpenPhysics Studio 0.9 | Brecha pendiente |
 |---|---|---|---|
 | Flujo Model Builder | Geometría, selecciones, materiales, física, malla, estudios y resultados integrados | Árbol integrado, presets, estados obsoletos y validación de esquema | Variables, funciones, unidades y secuencias generales de nodos |
+| Distribución de escritorio | Aplicaciones de escritorio instalables y licencias según producto | Ejecutable portable Windows x64 sin Node.js, publicado y probado por CI en cada push a `main` | Instaladores macOS/Linux, firma de código y actualizador automático |
 | Dimensión y geometría | 1D, 2D, axisimetría y 3D; operaciones paramétricas y booleanas | Rectángulos, polígonos simples y hasta 16 dominios poligonales 2D conectados o disjuntos | Primitivas, agujeros, booleanas, curvas, axisimetría, 3D y particionado automático |
 | CAD e importación | CAD/ECAD, reparación y simplificación según productos | CSV y SVG polygon/polyline/path lineal para un polígono | Curvas, STEP, IGES, STL, ECAD, importación multidominio y reparación |
 | Materiales | Bibliotecas, anisotropía, no linealidad y propiedades variables | Un material isotrópico por dominio con gradientes espaciales lineales de k, εr y E | Biblioteca, mezclas, anisotropía y dependencia de campo |
@@ -40,6 +41,10 @@ OpenPhysics Studio es un prototipo comunitario 2D desarrollado mediante ingenier
 3. **Adaptación y verificación.** Recuperación de gradiente, marcado, bisección conforme y errores frente a soluciones manufacturadas.
 4. **Kernels y solvers.** Producto escalar WASM reproducible, RCM e IC(0), contrastados con variantes de referencia.
 5. **API y ecuación propia.** Entrada pública `src/lib/openphysics.ts`, build ES/declaraciones y física escalar `−∇·(c∇u)+au=f`.
+
+## Mejora incorporada en 0.9
+
+**Aplicación portable de Windows y release continua.** Electron empaqueta el workbench completo para ejecutarlo localmente sin Node.js ni servidor. Cada push a `main` que supera la verificación genera y prueba el binario Windows x64, calcula su SHA-256 y reemplaza los mismos assets en la release `latest`. El paquete no está firmado y no se actualiza automáticamente; macOS y Linux siguen usando el flujo web o de desarrollo.
 
 ## Mejora incorporada en 0.8
 

@@ -1,25 +1,61 @@
 {
   "name": "openphysics-studio",
   "private": true,
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Clean-room open-source multiphysics workbench prototype",
   "license": "MIT",
   "type": "module",
+  "main": "desktop/main.cjs",
   "exports": {
     ".": {
       "types": "./dist-lib/openphysics.d.ts",
       "import": "./dist-lib/openphysics.js"
     }
   },
-  "files": ["dist-lib"],
+  "files": [
+    "dist-lib"
+  ],
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "build:lib": "vite build --config vite.lib.config.ts && tsc -p tsconfig.lib.json",
+    "build:desktop": "npm run build && node scripts/build-desktop.mjs",
+    "desktop": "npm run build && electron .",
     "lint": "eslint .",
     "test": "vitest run",
     "test:ui": "node scripts/validate-ui.mjs",
+    "test:desktop": "node scripts/validate-desktop.mjs",
     "preview": "vite preview"
+  },
+  "build": {
+    "appId": "org.openphysics.studio",
+    "productName": "OpenPhysics Studio",
+    "asar": true,
+    "compression": "normal",
+    "npmRebuild": false,
+    "electronDist": "node_modules/electron/dist",
+    "electronDownload": {
+      "arch": "x64"
+    },
+    "directories": {
+      "output": "release/latest"
+    },
+    "files": [
+      "dist/**/*",
+      "desktop/**/*",
+      "build/icon.*",
+      "package.json"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "artifactName": "OpenPhysics-Studio-Windows-x64.${ext}",
+      "target": [
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ]
+    }
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -78,6 +114,8 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",
     "autoprefixer": "^10.4.23",
+    "electron": "^45.0.0",
+    "electron-builder": "^26.18.0",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
     "eslint-plugin-react-refresh": "^0.4.24",

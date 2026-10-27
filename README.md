@@ -81,6 +81,24 @@ npm run dev -- --port 7100
 
 Open `http://localhost:7100`.
 
+## Windows desktop — no installation
+
+Download the latest `OpenPhysics-Studio-Windows-x64.exe` from the [rolling Windows release](https://github.com/pabaues/openphysics-studio/releases/tag/latest) and double-click it. The portable application includes Electron and the complete local workbench: Node.js, a server and an internet connection are not required after download.
+
+Every successful push to `main` runs the verification suite, builds and tests the Windows application, then replaces the `.exe` and its SHA-256 checksum in that same `latest` release. Download the asset again to obtain a newer build; the application does not update itself in the background.
+
+This is currently an **unsigned community build**, so Windows SmartScreen may request confirmation. It is distributed as a prerelease and should be used with the same research-prototype limitations described in this repository.
+
+For desktop development on Windows:
+
+```bash
+npm run desktop          # Build and open the unpacked application
+npm run test:desktop     # Launch it and run a real computation
+npm run build:desktop    # Generate release/latest/OpenPhysics-Studio-Windows-x64.exe
+```
+
+The packaging step reuses the Electron distribution installed by `npm ci`. `DESKTOP_OUTPUT` can select another output directory, and `DESKTOP_EXECUTABLE` lets `test:desktop` validate a packaged binary.
+
 ## Public TypeScript API
 
 The numerical core has no React dependency. Build the ES module and declarations with:
@@ -128,6 +146,7 @@ npm run lint
 npm run build
 npm run build:lib
 npm run test:ui
+npm run test:desktop  # Windows; validates startup and a real computation
 ```
 
 The UI check starts a temporary server on port 7101, drives Chrome or Edge through both solver families, Web Worker execution, stale-response invalidation, thermal/transient/electrostatic/structural/custom workflows, manufactured convergence, adaptation, IC(0), polygon import, connected/disconnected multidomain editing, per-domain materials, sweeps and downloads. It saves screenshots outside the repository and stops the server. Set `CHROME_PATH` or `UI_TEST_PORT` when needed.

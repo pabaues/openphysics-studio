@@ -87,6 +87,14 @@ La suite también comprueba importación/normalización SVG/CSV, rechazo de auto
 
 El ensayo de navegador cubre Worker, invalidación de respuestas obsoletas, ambos solvers, IC(0), RCM/natural, ecuación personalizada, error exacto, adaptación, transitorios, polígonos, geometría multidominio conectada y disjunta, edición de materiales por dominio, elasticidad, barridos y descargas. Las capturas se guardan fuera del repositorio y el servidor temporal se detiene.
 
+## Aplicación de escritorio y release
+
+`desktop/main.cjs` carga exclusivamente los archivos locales compilados, con Node Integration desactivado, aislamiento de contexto y sandbox. `scripts/validate-desktop.mjs` abre la aplicación mediante Electron, comprueba versión y modo empaquetado, ejecuta un cálculo en el Worker y carga el preset multidominio. La prueba se ejecuta también contra el binario empaquetado antes de publicar cada release.
+
+El workflow de GitHub Actions separa la verificación y el empaquetado Windows. Solo un push a `main` cuya verificación haya pasado puede actualizar la release continua `latest`; los pull requests no la modifican. La concurrencia cancela builds obsoletos de una misma rama para evitar que un push anterior sobrescriba otro más reciente. El nombre estable `OpenPhysics-Studio-Windows-x64.exe` permite reemplazar siempre el mismo asset, junto con su checksum SHA-256, sin acumular ejecutables antiguos en la release continua.
+
+El paquete comunitario no está firmado digitalmente y no contiene actualizador automático. La release continua distribuye la última compilación, pero el usuario debe descargarla de nuevo para actualizar su copia.
+
 ## Límites actuales
 
 - Hasta 16 dominios poligonales 2D, cada uno con un material isotrópico, y triángulos P1. Las interfaces deben compartir aristas completas coincidentes; no hay particionado automático de geometrías.
@@ -104,4 +112,6 @@ npm run lint
 npm run build
 npm run build:lib
 npm run test:ui
+npm run desktop       # En Windows; abre la aplicación de escritorio
+npm run test:desktop  # En Windows; valida ese arranque y un cálculo
 ```
