@@ -28,7 +28,9 @@ try {
   })
 
   await page.waitForLoadState('domcontentloaded')
-  await page.locator('.solver-metric .converged').waitFor({ timeout: 60000 })
+  const solverStatus = page.locator('.solver-metric .converged')
+  await solverStatus.waitFor({ state: 'attached', timeout: 60000 })
+  assert.equal(await solverStatus.textContent(), 'ITERATIVE CG')
   assert.equal(await page.title(), 'OpenPhysics Studio')
   assert(page.url().startsWith('file://'), 'The desktop application must load its local bundled files.')
 
