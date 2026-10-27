@@ -39,22 +39,24 @@ OpenPhysics Studio is a clean-room, open-source multiphysics workbench. It runs 
 - Nodal field and element-gradient visualization and export.
 - Available from the workbench and the public TypeScript API.
 
-### Geometry and meshing
+### Geometry, domains and meshing
 
-- Parametric rectangles or one simple 2D polygon, including concave boundaries.
-- CSV coordinates and SVG polygon/polyline/linear-path import; M/L/H/V/Z commands.
-- Geometry validation, Earcut triangulation and nested uniform red refinement.
+- Parametric rectangles, simple 2D polygons and up to 16 independent polygon domains, including concave boundaries.
+- Conforming multidomain meshes: matching full edges become continuous interfaces with shared nodes; disconnected regions and vertex-only contacts are supported.
+- Per-domain isotropic materials for heat, electrostatics, transient studies, elasticity and one-way thermal coupling.
+- CSV coordinates and SVG polygon/polyline/linear-path import; M/L/H/V/Z commands. Import currently creates one polygon.
+- Geometry validation rejects overlaps, partial-edge contacts and T-junctions. Earcut triangulation and nested uniform red refinement preserve domain tags.
 - Error-guided local refinement for stationary scalar physics: area-weighted gradient recovery, largest-indicator marking and conforming longest-edge bisection without hanging nodes.
-- Coarse node indices preserved during refinement.
+- Coarse node indices and per-element domain assignments preserved during refinement.
 
 ### Automated studies and postprocessing
 
 - Parametric sweeps of geometry, material and source parameters supported by each existing physics interface.
 - Automatic ×2 mesh-convergence sequences with normalized successive-grid L2 differences and observed order.
-- Optional exact nodal RMS/max error against scalar-sine and logarithmic-heat manufactured solutions.
+- Optional exact nodal RMS/max error against scalar-sine and logarithmic-heat manufactured solutions on single-domain models.
 - Adaptive reports with nodes, elements, marked fraction, recovery indicator and optional exact error.
-- Exact P1 integration of primary scalar fields, extrema, area-centroid probes and derived CSV.
-- CSV, legacy VTK, versioned JSON and standalone HTML reports.
+- Exact P1 integration globally and per domain, extrema, area-centroid probes and derived CSV.
+- CSV, legacy VTK with `domain_id`, versioned JSON and standalone HTML reports with domain materials.
 
 ## Solvers and execution
 
@@ -64,7 +66,7 @@ OpenPhysics Studio is a clean-room, open-source multiphysics workbench. It runs 
 - True relative residuals and convergence state; warm starts for transient steps.
 - A synchronous WebAssembly dot-product kernel with JavaScript fallback. It is only a kernel, not a full WASM solver; no speedup is claimed without a workload-specific benchmark.
 - Compute, convergence, adaptation and sweeps run sequentially in one persistent Web Worker. Edits logically invalidate stale responses but do not immediately cancel an active calculation.
-- Schema v7 projects with additive migration from v1–v6 and stable model signatures.
+- Schema v8 projects with additive migration from v1–v7 and stable model signatures.
 
 All models and results stay on the local machine. No backend is required.
 
@@ -128,19 +130,20 @@ npm run build:lib
 npm run test:ui
 ```
 
-The UI check starts a temporary server on port 7101, drives Chrome or Edge through both solver families, Web Worker execution, stale-response invalidation, thermal/transient/electrostatic/structural/custom workflows, manufactured convergence, adaptation, IC(0), polygon import, sweeps and downloads. It saves screenshots outside the repository and stops the server. Set `CHROME_PATH` or `UI_TEST_PORT` when needed.
+The UI check starts a temporary server on port 7101, drives Chrome or Edge through both solver families, Web Worker execution, stale-response invalidation, thermal/transient/electrostatic/structural/custom workflows, manufactured convergence, adaptation, IC(0), polygon import, connected/disconnected multidomain editing, per-domain materials, sweeps and downloads. It saves screenshots outside the repository and stops the server. Set `CHROME_PATH` or `UI_TEST_PORT` when needed.
 
 See [verification models, analytical benchmarks and tolerances](docs/verification.md) for the exact verification contract.
 
 ## Convergence and adaptation semantics
 
-Successive-grid L2 differences are **not** exact-solution errors. When a manufactured reference is selected, the report separately computes nodal RMS (`exactL2`) and maximum absolute error (`exactMaximum`). The scalar-sine case imposes zero Dirichlet boundaries and manufactures the corresponding source. The logarithmic case requires stationary heat, zero source, zero conductivity gradient in Y and insulated top/bottom boundaries.
+Successive-grid L2 differences are **not** exact-solution errors. When a manufactured reference is selected, the report separately computes nodal RMS (`exactL2`) and maximum absolute error (`exactMaximum`). The scalar-sine case imposes zero Dirichlet boundaries and manufactures the corresponding source. The logarithmic case requires stationary heat, zero source, zero conductivity gradient in Y and insulated top/bottom boundaries. Manufactured references currently require a single domain.
 
 The adaptive recovery indicator guides refinement but is **not a guaranteed error bound**. Local adaptation currently supports stationary heat, electrostatics and custom scalar physics; elasticity and transient studies use uniform convergence sequences. Studies do not modify the base mesh stored in the project.
 
 ## Important limits
 
-- One 2D domain per model, one isotropic material, P1 triangles and per-unit-depth physics.
+- Up to 16 simple polygon domains with one isotropic material each, P1 triangles and per-unit-depth physics.
+- Interfaces require complete matching edges; there is no automatic geometry partitioning, multidomain file import or general nonconforming-interface coupling.
 - Spatial material variation is linear; field-dependent properties, anisotropy and nonlinear materials are absent.
 - No holes, multiple subpaths, curves, CAD, Boolean geometry, axisymmetry or 3D.
 - Thermal coupling is one-way and stationary; no strongly coupled block solve or multiphysics iteration.
@@ -153,6 +156,9 @@ The adaptive recovery indicator guides refinement but is **not a guaranteed erro
 
 ```text
 src/lib/fem/scalar.ts          Shared scalar assembly and gradients
+src/lib/fem/geometry.ts        Polygon validation and multidomain construction
+src/lib/fem/mesh.ts            Conforming domain meshes and domain-tagged refinement
+src/lib/fem/properties.ts      Per-domain spatial material evaluation
 src/lib/fem/elasticity.ts      Vector elasticity, traction and thermal strain
 src/lib/fem/custom.ts          Custom diffusion–reaction interface
 src/lib/fem/adaptive.ts        Recovery indicator and conforming local refinement
@@ -161,7 +167,7 @@ src/lib/fem/solver.ts          CG, sparse LDLᵀ and ordering integration
 src/lib/fem/preconditioner.ts  Jacobi and IC(0)
 src/lib/fem/ordering.ts        Reverse Cuthill–McKee
 src/lib/fem/wasm.ts            Synchronous WASM dot product with JS fallback
-src/lib/fem/project.ts         Schema v7 and v1–v6 migration
+src/lib/fem/project.ts         Schema v8 and v1–v7 migration
 src/lib/openphysics.ts         Public numerical API
 src/workers/study.worker.ts    Background compute and study jobs
 src/components/               Model tree, settings, plots and viewport

@@ -89,7 +89,40 @@ export function createPolygonMesh(vertices: MeshNode[], refinement = 1): Mesh {
   return mesh
 }
 
+export function createMultidomainMesh(model: HeatModel, extraRefinement = 0): Mesh {
+  const refinement = (model.mesh.refinement ?? 1) + extraRefinement
+  const nodes: MeshNode[] = []
+  const triangles: Triangle[] = []
+  const triangleDomains: number[] = []
+  const shared = new Map<string, number>()
+  const tolerance = Math.max(1, model.geometry.width, model.geometry.height) * 1e-9
+  const key = (node: MeshNode) => `${Math.round(node.x / tolerance)}:${Math.round(node.y / tolerance)}`
+  model.geometry.domains.forEach((domain, domainIndex) => {
+    const local = createPolygonMesh(domain.vertices, refinement)
+    const indices = local.nodes.map((node) => {
+      const nodeKey = key(node)
+      const existing = shared.get(nodeKey)
+      if (existing !== undefined) return existing
+      const index = nodes.length
+      nodes.push({ ...node })
+      shared.set(nodeKey, index)
+      return index
+    })
+    local.triangles.forEach((triangle) => {
+      triangles.push(triangle.map((node) => indices[node]!) as Triangle)
+      triangleDomains.push(domainIndex)
+    })
+  })
+  if (triangles.length > 100000) throw new Error('The multidomain mesh exceeds 100,000 triangles. Reduce the refinement level.')
+  return {
+    kind: 'unstructured', nodes, triangles, triangleDomains,
+    width: model.geometry.width, height: model.geometry.height, refinement,
+    centroid: areaCentroid(nodes, triangles, model.geometry.domains[0]!.vertices[0]!),
+  }
+}
+
 export function createModelMesh(model: HeatModel, extraRefinement = 0): Mesh {
+  if (model.geometry.domains.length > 1) return createMultidomainMesh(model, extraRefinement)
   if (model.geometry.shape === 'polygon') return createPolygonMesh(model.geometry.vertices, (model.mesh.refinement ?? 1) + extraRefinement)
   return createRectangularMesh(model.geometry.width, model.geometry.height, model.mesh.nx * 2 ** extraRefinement, model.mesh.ny * 2 ** extraRefinement)
 }

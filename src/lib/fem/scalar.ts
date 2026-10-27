@@ -15,10 +15,10 @@ export interface ScalarProblem {
   solver: SolverKind
   preconditioner?: PreconditionerKind
   ordering?: SolverOrdering
-  coefficientAt?: (x: number, y: number) => number
-  sourceAt?: (x: number, y: number) => number
+  coefficientAt?: (x: number, y: number, domainIndex: number) => number
+  sourceAt?: (x: number, y: number, domainIndex: number) => number
   boundaryFlux?: (a: MeshNode, b: MeshNode, aIndex: number, bIndex: number) => number | undefined
-  reactionCoefficient?: number
+  reactionCoefficient?: number | ((domainIndex: number) => number)
   reactionSource?: number[]
   initialValues?: number[]
   prescribedValue: (x: number, y: number) => number | undefined
@@ -73,12 +73,13 @@ export function assembleScalar(problem: ScalarProblem, mesh: Mesh): ScalarAssemb
   })
   const rowMaps = freeToGlobal.map(() => new Map<number, number>())
   const rhs = Array<number>(freeToGlobal.length).fill(0)
-  const reaction = problem.reactionCoefficient ?? 0
-  for (const triangle of mesh.triangles) {
+  for (const [elementIndex, triangle] of mesh.triangles.entries()) {
     const { area, b, c } = triangleGeometry(mesh, triangle)
     const centroid = triangleCentroid(mesh, triangle)
-    const coefficient = problem.coefficientAt?.(centroid.x, centroid.y) ?? problem.coefficient
-    const source = problem.sourceAt?.(centroid.x, centroid.y) ?? problem.source
+    const domainIndex = mesh.triangleDomains?.[elementIndex] ?? 0
+    const reaction = typeof problem.reactionCoefficient === 'function' ? problem.reactionCoefficient(domainIndex) : problem.reactionCoefficient ?? 0
+    const coefficient = problem.coefficientAt?.(centroid.x, centroid.y, domainIndex) ?? problem.coefficient
+    const source = problem.sourceAt?.(centroid.x, centroid.y, domainIndex) ?? problem.source
     if (!(coefficient > 0)) throw new Error('The diffusion coefficient must remain positive throughout the mesh.')
     for (let localI = 0; localI < 3; localI += 1) {
       const globalI = triangle[localI]!

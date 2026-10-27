@@ -81,20 +81,23 @@ export function SimulationCanvas({ model, result, view, quantity, showMesh, stal
       <text x="830" y="460" className="axis-label">x</text><text x="48" y="45" className="axis-label">y</text>
 
       {view === 'geometry' && <g>
-        <polygon points={model.geometry.vertices.map((point) => `${px(point.x)},${py(point.y)}`).join(' ')} fill="#dcecff" stroke="#3b82f6" strokeWidth="2" strokeLinejoin="round" />
-        {model.geometry.vertices.map((point, index) => <circle key={index} cx={px(point.x)} cy={py(point.y)} r="4" fill="#fff" stroke="#2563eb" strokeWidth="2" />)}
-        {mesh && <text x={px(mesh.centroid.x)} y={py(mesh.centroid.y)} className="domain-label">Domain 1</text>}
+        {model.geometry.domains.map((domain, domainIndex) => <g key={domain.id}>
+          <polygon points={domain.vertices.map((point) => `${px(point.x)},${py(point.y)}`).join(' ')} fill={domainIndex % 2 === 0 ? '#dcecff' : '#e8e1ff'} stroke={domainIndex % 2 === 0 ? '#3b82f6' : '#8b5cf6'} strokeWidth="2" strokeLinejoin="round" />
+          {domain.vertices.map((point, index) => <circle key={index} cx={px(point.x)} cy={py(point.y)} r="4" fill="#fff" stroke="#2563eb" strokeWidth="2" />)}
+          <text x={px(domain.vertices.reduce((sum, point) => sum + point.x, 0) / domain.vertices.length)} y={py(domain.vertices.reduce((sum, point) => sum + point.y, 0) / domain.vertices.length)} className="domain-label">{domain.name}</text>
+        </g>)}
       </g>}
 
       {(view === 'mesh' || view === 'results') && mesh && <g>
-        {structural && view === 'results' && <polygon points={model.geometry.vertices.map((point) => `${px(point.x)},${py(point.y)}`).join(' ')} fill="none" stroke="#94a3b8" strokeDasharray="5 4" strokeWidth="1" />}
+        {structural && view === 'results' && model.geometry.domains.map((domain) => <polygon key={domain.id} points={domain.vertices.map((point) => `${px(point.x)},${py(point.y)}`).join(' ')} fill="none" stroke="#94a3b8" strokeDasharray="5 4" strokeWidth="1" />)}
         {mesh.triangles.map((triangle, index) => {
           const points = triangle.map((node) => { const point = displayPoint(node); return `${px(point.x)},${py(point.y)}` }).join(' ')
           const value = view === 'results' && values ? nodal ? triangle.reduce((sum, node) => sum + values[node]!, 0) / 3 : values[index]! : 0
           const fill = view === 'results' ? colorAt(value, min, max) : '#f8fbff'
-          return <polygon key={index} points={points} fill={fill} stroke={view === 'mesh' || showMesh ? '#64748b' : fill} strokeWidth={view === 'mesh' ? 0.75 : showMesh ? 0.45 : 0.15}><title>{view === 'results' ? `${fieldName}: ${scientific(value)} ${unit}` : `Triangle ${index + 1}`}</title></polygon>
+          const domain = mesh.triangleDomains?.[index] ?? 0
+          return <polygon key={index} points={points} fill={fill} stroke={view === 'mesh' || showMesh ? '#64748b' : fill} strokeWidth={view === 'mesh' ? 0.75 : showMesh ? 0.45 : 0.15}><title>{view === 'results' ? `${model.geometry.domains[domain]?.name ?? `Domain ${domain + 1}`} · ${fieldName}: ${scientific(value)} ${unit}` : `Domain ${domain + 1} · Triangle ${index + 1}`}</title></polygon>
         })}
-        {!structural && <polygon points={model.geometry.vertices.map((point) => `${px(point.x)},${py(point.y)}`).join(' ')} fill="none" stroke="#334155" strokeWidth="1.4" strokeLinejoin="round" />}
+        {!structural && model.geometry.domains.map((domain) => <polygon key={domain.id} points={domain.vertices.map((point) => `${px(point.x)},${py(point.y)}`).join(' ')} fill="none" stroke="#334155" strokeWidth="1.4" strokeLinejoin="round" />)}
         {view === 'results' && quantity !== 'vonMises' && quantity !== 'displacement' && !nodal && vectors.map((vector, index) => {
           if (index % Math.max(1, Math.floor(vectors.length / 45)) !== 0) return null
           const triangle = mesh.triangles[index]!

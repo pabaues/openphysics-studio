@@ -15,6 +15,7 @@ export interface DerivedValues {
   minimum: Extremum
   maximum: Extremum
   centerProbe: number
+  domains: Array<{ domain: number; area: number; integral: number; average: number }>
 }
 
 function extremum(values: number[], nodes: MeshNode[], maximum: boolean): Extremum {
@@ -31,11 +32,18 @@ export function deriveValues(result: AnySimulationResult): DerivedValues {
   const { mesh } = result
   let area = 0
   let integral = 0
-  for (const triangle of mesh.triangles) {
+  const domainValues = new Map<number, { area: number; integral: number }>()
+  mesh.triangles.forEach((triangle, elementIndex) => {
     const elementArea = triangleGeometry(mesh, triangle).area
+    const elementIntegral = elementArea * triangle.reduce((sum, node) => sum + values[node]!, 0) / 3
     area += elementArea
-    integral += elementArea * triangle.reduce((sum, node) => sum + values[node]!, 0) / 3
-  }
+    integral += elementIntegral
+    const domain = mesh.triangleDomains?.[elementIndex] ?? 0
+    const current = domainValues.get(domain) ?? { area: 0, integral: 0 }
+    current.area += elementArea
+    current.integral += elementIntegral
+    domainValues.set(domain, current)
+  })
   const centerProbe = interpolateMesh(mesh, values, mesh.centroid)
   return {
     area,
@@ -44,5 +52,6 @@ export function deriveValues(result: AnySimulationResult): DerivedValues {
     minimum: extremum(values, mesh.nodes, false),
     maximum: extremum(values, mesh.nodes, true),
     centerProbe,
+    domains: [...domainValues.entries()].sort(([a], [b]) => a - b).map(([domain, value]) => ({ domain, ...value, average: value.integral / value.area })),
   }
 }

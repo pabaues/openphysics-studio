@@ -26,7 +26,8 @@ describe('scientific exporters', () => {
     const csv = toDerivedCsv(result)
     expect(csv).toContain('area_weighted_average')
     expect(csv).toContain('center_probe')
-    expect(csv.split('\n')).toHaveLength(7)
+    expect(csv).toContain('domain_1_area')
+    expect(csv.split('\n')).toHaveLength(10)
   })
 
   it('exports every sweep case', () => {

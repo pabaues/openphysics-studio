@@ -15,7 +15,7 @@ export function solveElectrostatics(model: HeatModel, existingMesh?: Mesh): Elec
     nx: model.mesh.nx,
     ny: model.mesh.ny,
     coefficient: permittivity,
-    coefficientAt: (x, y) => permittivityAt(model, x, y) * VACUUM_PERMITTIVITY,
+    coefficientAt: (x, y, domainIndex) => permittivityAt(model, x, y, domainIndex) * VACUUM_PERMITTIVITY,
     source: model.electrostatics.chargeDensity,
     sourceAt: (x, y) => manufacturedSource(model, x, y) ?? model.electrostatics.chargeDensity,
     tolerance: model.study.tolerance,

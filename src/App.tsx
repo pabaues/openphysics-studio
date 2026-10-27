@@ -27,7 +27,7 @@ import { SweepPanel } from '@/components/SweepPanel'
 import { SimulationCanvas, type ResultQuantity, type ViewMode } from '@/components/SimulationCanvas'
 import { downloadText, toCsv, toDerivedCsv, toHtmlReport, toSweepCsv, toVtk } from '@/lib/fem/exporters'
 import { modelSignature, parseProjectJson } from '@/lib/fem/project'
-import { parseGeometryFile, polygonGeometry, rectangleGeometry } from '@/lib/fem/geometry'
+import { multiDomainGeometry, parseGeometryFile, polygonGeometry, rectangleGeometry } from '@/lib/fem/geometry'
 import { heatResultAtTime } from '@/lib/fem/heat'
 import { createStudyJobClient } from '@/lib/fem/jobClient'
 import { type SweepReport } from '@/lib/fem/sweep'
@@ -263,6 +263,17 @@ function App() {
       next.material.conductivity = 15
       next.physics = { heatSource: 500000, leftTemperature: 20, rightTemperature: 20, top: { type: 'temperature', value: 20 }, bottom: { type: 'temperature', value: 20 } }
     }
+    if (preset === 'composite') {
+      next.name = 'Two-material composite plate'
+      next.geometry = multiDomainGeometry([
+        { id: 'domain-1', name: 'High-conductivity domain', vertices: [{ x: 0, y: 0 }, { x: 0.05, y: 0 }, { x: 0.05, y: 0.05 }, { x: 0, y: 0.05 }] },
+        { id: 'domain-2', name: 'Low-conductivity domain', vertices: [{ x: 0.05, y: 0 }, { x: 0.1, y: 0 }, { x: 0.1, y: 0.05 }, { x: 0.05, y: 0.05 }] },
+      ])
+      next.material.conductivity = 45
+      next.domainMaterials = { 'domain-2': { ...structuredClone(next.material), conductivity: 5, relativePermittivity: 4.2, youngsModulus: 70e9 } }
+      next.physics = { heatSource: 0, leftTemperature: 20, rightTemperature: 80, top: { type: 'insulated' }, bottom: { type: 'insulated' } }
+      next.mesh = { nx: 16, ny: 12, refinement: 2 }
+    }
     if (preset === 'electric') {
       next.name = 'Parallel plate capacitor'
       next.activePhysics = 'electrostatics'
@@ -331,7 +342,7 @@ function App() {
     </header>
 
     <div className="ribbon">
-      <div className="ribbon-group preset-group"><Flame size={16} className="text-orange-500" /><select aria-label="Example model" onChange={(event) => choosePreset(event.target.value)} value=""><option value="" disabled>Example models</option><option value="plate">Thermal plate study</option><option value="bar">Insulated conduction bar</option><option value="generation">Volumetric heating plate</option><option value="electric">Parallel plate capacitor</option><option value="polygon">L-shaped electrostatic domain</option><option value="tension">Uniaxial tension patch</option></select><ChevronDown size={12} /></div>
+      <div className="ribbon-group preset-group"><Flame size={16} className="text-orange-500" /><select aria-label="Example model" onChange={(event) => choosePreset(event.target.value)} value=""><option value="" disabled>Example models</option><option value="plate">Thermal plate study</option><option value="bar">Insulated conduction bar</option><option value="generation">Volumetric heating plate</option><option value="composite">Two-material composite plate</option><option value="electric">Parallel plate capacitor</option><option value="polygon">L-shaped electrostatic domain</option><option value="tension">Uniaxial tension patch</option></select><ChevronDown size={12} /></div>
       <div className="ribbon-separator" />
       <button className="ribbon-button" onClick={() => selectNode('geometry')}><Box size={16} /><span>Geometry</span></button>
       <div className="physics-picker">{model.activePhysics === 'heat' ? <Flame size={15} /> : model.activePhysics === 'electrostatics' ? <Zap size={15} /> : model.activePhysics === 'custom' ? <Activity size={15} /> : <Box size={15} />}<select aria-label="Active physics" value={model.activePhysics} onChange={(event) => changePhysics(event.target.value as ActivePhysics)}><option value="heat">Heat Transfer</option><option value="electrostatics">Electrostatics</option><option value="elasticity">Linear Elasticity</option><option value="custom">Custom scalar PDE</option></select><Activity size={12} /></div>

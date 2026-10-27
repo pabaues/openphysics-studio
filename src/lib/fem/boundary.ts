@@ -21,10 +21,16 @@ export function geometryEdgeAt(vertices: MeshNode[], point: MeshNode): number | 
   return geometryEdgesAt(vertices, point)[0]
 }
 
+export function boundaryOverrideKey(domainIndex: number, edge: number): string {
+  return domainIndex === 0 ? String(edge) : `${domainIndex}:${edge}`
+}
+
 export function edgeOverride(model: HeatModel, physics: keyof HeatModel['edgeBoundaries'], point: MeshNode) {
-  for (const edge of geometryEdgesAt(model.geometry.vertices, point)) {
-    const override = model.edgeBoundaries[physics][String(edge)]
-    if (override) return override
+  for (const [domainIndex, domain] of model.geometry.domains.entries()) {
+    for (const edge of geometryEdgesAt(domain.vertices, point)) {
+      const override = model.edgeBoundaries[physics][boundaryOverrideKey(domainIndex, edge)]
+      if (override) return override
+    }
   }
   return undefined
 }
@@ -45,8 +51,7 @@ export function meshBoundaryEdges(mesh: Mesh): Array<[number, number]> {
 
 export function boundaryConditionOnEdge<T>(model: HeatModel, physics: keyof HeatModel['edgeBoundaries'], mesh: Mesh, a: number, b: number, named: (midpoint: MeshNode) => T): T {
   const midpoint = { x: (mesh.nodes[a]!.x + mesh.nodes[b]!.x) / 2, y: (mesh.nodes[a]!.y + mesh.nodes[b]!.y) / 2 }
-  const edge = geometryEdgeAt(model.geometry.vertices, midpoint)
-  const override = edge === undefined ? undefined : model.edgeBoundaries[physics][String(edge)]
+  const override = edgeOverride(model, physics, midpoint)
   return (override ?? named(midpoint)) as T
 }
 

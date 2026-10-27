@@ -32,9 +32,18 @@ function withParameter(model: HeatModel, parameter: SweepParameter, value: numbe
   const next = structuredClone(model)
   if (parameter === 'geometry.width') next.geometry = rectangleGeometry(value, next.geometry.height)
   if (parameter === 'geometry.height') next.geometry = rectangleGeometry(next.geometry.width, value)
-  if (parameter === 'material.conductivity') next.material.conductivity = value
-  if (parameter === 'material.relativePermittivity') next.material.relativePermittivity = value
-  if (parameter === 'material.youngsModulus') next.material.youngsModulus = value
+  if (parameter === 'material.conductivity') {
+    next.material.conductivity = value
+    Object.values(next.domainMaterials).forEach((material) => { material.conductivity = value })
+  }
+  if (parameter === 'material.relativePermittivity') {
+    next.material.relativePermittivity = value
+    Object.values(next.domainMaterials).forEach((material) => { material.relativePermittivity = value })
+  }
+  if (parameter === 'material.youngsModulus') {
+    next.material.youngsModulus = value
+    Object.values(next.domainMaterials).forEach((material) => { material.youngsModulus = value })
+  }
   if (parameter === 'physics.heatSource') next.physics.heatSource = value
   if (parameter === 'electrostatics.chargeDensity') next.electrostatics.chargeDensity = value
   return heatModelSchema.parse(next)

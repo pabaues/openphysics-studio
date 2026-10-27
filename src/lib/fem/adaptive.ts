@@ -40,6 +40,7 @@ export function refineMarkedMesh(mesh: Mesh, marked: Set<number>): Mesh {
   if (marked.size === 0) return mesh
   const nodes = mesh.nodes.map((node) => ({ ...node }))
   let triangles = mesh.triangles.map((triangle) => [...triangle] as Triangle)
+  let triangleDomains = mesh.triangleDomains ? [...mesh.triangleDomains] : undefined
   const midpoints = new Map<string, number>()
   const midpoint = (a: number, b: number) => {
     const key = edgeKey(a, b)
@@ -54,12 +55,17 @@ export function refineMarkedMesh(mesh: Mesh, marked: Set<number>): Mesh {
   for (let pass = 0; pass < 100; pass += 1) {
     let changed = false
     const next: Triangle[] = []
+    const nextDomains: number[] = []
     for (let index = 0; index < triangles.length; index += 1) {
       const triangle = triangles[index]!
       const edges = [[triangle[0], triangle[1]], [triangle[1], triangle[2]], [triangle[2], triangle[0]]] as const
       const hanging = edges.filter(([a, b]) => midpoints.has(edgeKey(a, b)))
       const mustSplit = requested.has(index) || hanging.length > 0
-      if (!mustSplit) { next.push(triangle); continue }
+      if (!mustSplit) {
+        next.push(triangle)
+        nextDomains.push(triangleDomains?.[index] ?? 0)
+        continue
+      }
       const candidates = hanging.length > 0 ? hanging : edges
       const [a, b] = candidates.reduce((longest, edge) => {
         const length = (nodes[edge[0]]!.x - nodes[edge[1]]!.x) ** 2 + (nodes[edge[0]]!.y - nodes[edge[1]]!.y) ** 2
@@ -69,15 +75,17 @@ export function refineMarkedMesh(mesh: Mesh, marked: Set<number>): Mesh {
       const opposite = triangle.find((node) => node !== a && node !== b)!
       const middle = midpoint(a, b)
       next.push([a, middle, opposite], [middle, b, opposite])
+      nextDomains.push(triangleDomains?.[index] ?? 0, triangleDomains?.[index] ?? 0)
       changed = true
     }
     triangles = next
+    triangleDomains = mesh.triangleDomains ? nextDomains : undefined
     requested.clear()
     if (!changed) break
     if (pass === 99) throw new Error('Adaptive conformity closure did not terminate.')
   }
   if (triangles.length > 100000) throw new Error('Adaptive refinement exceeded 100,000 triangles.')
-  return { kind: 'unstructured', nodes, triangles, width: mesh.width, height: mesh.height, centroid: mesh.centroid, refinement: mesh.refinement + 1 }
+  return { kind: 'unstructured', nodes, triangles, triangleDomains, width: mesh.width, height: mesh.height, centroid: mesh.centroid, refinement: mesh.refinement + 1 }
 }
 
 function solveScalarOnMesh(model: HeatModel, mesh?: Mesh): AnySimulationResult {

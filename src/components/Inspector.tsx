@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { Download, FileJson, FileText, FileUp, Info, LoaderCircle, Play, ShieldCheck, TrendingUp } from 'lucide-react'
 import type { NodeId } from './ModelTree'
-import { rectangleGeometry, signedPolygonArea } from '@/lib/fem/geometry'
+import { multiDomainGeometry, rectangleGeometry, signedPolygonArea } from '@/lib/fem/geometry'
+import { boundaryOverrideKey } from '@/lib/fem/boundary'
+import { materialForDomain } from '@/lib/fem/properties'
 import { near } from '@/lib/fem/scalar'
 import { sweepParameters } from '@/lib/fem/sweep'
-import type { AnySimulationResult, BoundaryCondition, CustomBoundaryCondition, ElectricBoundaryCondition, HeatModel, StructuralBoundaryCondition, SweepParameter } from '@/lib/fem/types'
+import type { AnySimulationResult, BoundaryCondition, CustomBoundaryCondition, ElectricBoundaryCondition, HeatModel, Material, StructuralBoundaryCondition, SweepParameter } from '@/lib/fem/types'
 
 interface InspectorProps {
   model: HeatModel
@@ -72,9 +74,13 @@ function StructuralBoundary({ condition, onChange }: { condition: StructuralBoun
 }
 
 function EdgeBoundaryEditor({ model, physics, onChange }: { model: HeatModel; physics: keyof HeatModel['edgeBoundaries']; onChange: (model: HeatModel) => void }) {
-  const [selectedEdge, setEdge] = useState(0)
-  const vertices = model.geometry.vertices
-  const edge = selectedEdge % vertices.length
+  const [selection, setSelection] = useState('0:0')
+  const [requestedDomain, requestedEdge] = selection.split(':').map(Number)
+  const domainIndex = model.geometry.domains[requestedDomain] ? requestedDomain : 0
+  const domain = model.geometry.domains[domainIndex]!
+  const vertices = domain.vertices
+  const edge = (requestedEdge ?? 0) % vertices.length
+  const key = boundaryOverrideKey(domainIndex, edge)
   const a = vertices[edge]!
   const b = vertices[(edge + 1) % vertices.length]!
   const midpoint = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
@@ -93,29 +99,58 @@ function EdgeBoundaryEditor({ model, physics, onChange }: { model: HeatModel; ph
       : near(midpoint.y, height, height) ? model.custom.top : { type: 'neumann', value: 0 }
   const update = (condition: BoundaryCondition | ElectricBoundaryCondition | StructuralBoundaryCondition | CustomBoundaryCondition) => {
     const edgeBoundaries = structuredClone(model.edgeBoundaries)
-    if (physics === 'heat') edgeBoundaries.heat[String(edge)] = condition as BoundaryCondition
-    if (physics === 'electrostatics') edgeBoundaries.electrostatics[String(edge)] = condition as ElectricBoundaryCondition
-    if (physics === 'elasticity') edgeBoundaries.elasticity[String(edge)] = condition as StructuralBoundaryCondition
-    if (physics === 'custom') edgeBoundaries.custom[String(edge)] = condition as CustomBoundaryCondition
+    if (physics === 'heat') edgeBoundaries.heat[key] = condition as BoundaryCondition
+    if (physics === 'electrostatics') edgeBoundaries.electrostatics[key] = condition as ElectricBoundaryCondition
+    if (physics === 'elasticity') edgeBoundaries.elasticity[key] = condition as StructuralBoundaryCondition
+    if (physics === 'custom') edgeBoundaries.custom[key] = condition as CustomBoundaryCondition
     onChange({ ...model, edgeBoundaries })
   }
   const reset = () => {
     const edgeBoundaries = structuredClone(model.edgeBoundaries)
-    delete edgeBoundaries[physics][String(edge)]
+    delete edgeBoundaries[physics][key]
     onChange({ ...model, edgeBoundaries })
   }
   return <div className="inspector-section">
     <div className="property-row"><span>Arbitrary boundary selection</span><strong>{Object.keys(model.edgeBoundaries[physics]).length} overrides</strong></div>
-    <label className="field-label"><span>Boundary edge</span><select aria-label={`${physics} boundary edge`} value={edge} onChange={(event) => setEdge(Number(event.target.value))}>{vertices.map((vertex, index) => <option key={index} value={index}>Edge {index} · ({vertex.x.toPrecision(3)}, {vertex.y.toPrecision(3)})</option>)}</select></label>
-    {physics === 'heat' && <ThermalBoundary condition={model.edgeBoundaries.heat[String(edge)] ?? heatDefault} onChange={update} />}
-    {physics === 'electrostatics' && <ElectricBoundary condition={model.edgeBoundaries.electrostatics[String(edge)] ?? electricDefault} onChange={update} />}
-    {physics === 'elasticity' && <StructuralBoundary condition={model.edgeBoundaries.elasticity[String(edge)] ?? structuralDefault} onChange={update} />}
-    {physics === 'custom' && <CustomBoundary condition={model.edgeBoundaries.custom[String(edge)] ?? customDefault} onChange={update} />}
+    <label className="field-label"><span>Domain / boundary edge</span><select aria-label={`${physics} boundary edge`} value={`${domainIndex}:${edge}`} onChange={(event) => setSelection(event.target.value)}>{model.geometry.domains.flatMap((item, itemIndex) => item.vertices.map((vertex, index) => <option key={`${itemIndex}:${index}`} value={`${itemIndex}:${index}`}>{item.name} · Edge {index} · ({vertex.x.toPrecision(3)}, {vertex.y.toPrecision(3)})</option>))}</select></label>
+    {physics === 'heat' && <ThermalBoundary condition={model.edgeBoundaries.heat[key] ?? heatDefault} onChange={update} />}
+    {physics === 'electrostatics' && <ElectricBoundary condition={model.edgeBoundaries.electrostatics[key] ?? electricDefault} onChange={update} />}
+    {physics === 'elasticity' && <StructuralBoundary condition={model.edgeBoundaries.elasticity[key] ?? structuralDefault} onChange={update} />}
+    {physics === 'custom' && <CustomBoundary condition={model.edgeBoundaries.custom[key] ?? customDefault} onChange={update} />}
     <button className="export-button" onClick={reset}>Use named boundary default</button>
   </div>
 }
 
 export function Inspector({ model, selected, result, stale, converging, onChange, onImportGeometry, onExport, onRunConvergence, onRunAdaptive, onRunSweep }: InspectorProps) {
+  const [selectedDomain, setSelectedDomain] = useState(0)
+  const domainIndex = model.geometry.domains[selectedDomain] ? selectedDomain : 0
+  const activeDomain = model.geometry.domains[domainIndex]!
+  const activeMaterial = materialForDomain(model, domainIndex)
+  const updateMaterial = (patch: Partial<Material>) => {
+    if (domainIndex === 0) onChange({ ...model, material: { ...model.material, ...patch } })
+    else onChange({ ...model, domainMaterials: { ...model.domainMaterials, [activeDomain.id]: { ...activeMaterial, ...patch } } })
+  }
+  const addDomain = () => {
+    const gap = model.geometry.width * 0.1
+    const width = model.geometry.width * 0.5
+    const x = model.geometry.width + gap
+    let sequence = model.geometry.domains.length + 1
+    while (model.geometry.domains.some((domain) => domain.id === `domain-${sequence}`)) sequence += 1
+    const id = `domain-${sequence}`
+    const domain = { id, name: `Domain ${sequence}`, vertices: [{ x, y: 0 }, { x: x + width, y: 0 }, { x: x + width, y: model.geometry.height }, { x, y: model.geometry.height }] }
+    onChange({ ...model, geometry: multiDomainGeometry([...model.geometry.domains, domain]), domainMaterials: { ...model.domainMaterials, [id]: structuredClone(activeMaterial) } })
+    setSelectedDomain(model.geometry.domains.length)
+  }
+  const removeDomain = () => {
+    if (model.geometry.domains.length === 1) return
+    const retained = model.geometry.domains.filter((_, index) => index !== domainIndex)
+    const domainMaterials = structuredClone(model.domainMaterials)
+    delete domainMaterials[activeDomain.id]
+    const material = domainIndex === 0 ? materialForDomain(model, 1) : model.material
+    if (domainIndex === 0) delete domainMaterials[retained[0]!.id]
+    onChange({ ...model, material, geometry: multiDomainGeometry(retained), domainMaterials })
+    setSelectedDomain(0)
+  }
   const updatePhysics = (patch: Partial<HeatModel['physics']>) => onChange({ ...model, activePhysics: 'heat', physics: { ...model.physics, ...patch } })
   const updateElectric = (patch: Partial<HeatModel['electrostatics']>) => onChange({ ...model, activePhysics: 'electrostatics', electrostatics: { ...model.electrostatics, ...patch } })
   const updateStructural = (patch: Partial<HeatModel['elasticity']>) => onChange({ ...model, activePhysics: 'elasticity', study: { ...model.study, type: 'stationary' }, elasticity: { ...model.elasticity, ...patch } })
@@ -129,7 +164,7 @@ export function Inspector({ model, selected, result, stale, converging, onChange
   const finestDivisions = Math.max(model.mesh.nx, model.mesh.ny) * 2 ** (model.convergence.levels - 1)
   const baseRefinement = model.mesh.refinement ?? 1
   const finestRefinement = baseRefinement + model.convergence.levels - 1
-  const estimatedTriangles = (model.geometry.vertices.length - 2) * 4 ** finestRefinement
+  const estimatedTriangles = model.geometry.domains.reduce((sum, domain) => sum + domain.vertices.length - 2, 0) * 4 ** finestRefinement
   const convergenceTooLarge = isPolygon ? finestRefinement > 5 || estimatedTriangles > 100000 : finestDivisions > 128
   const geometryImport = <label className="study-button geometry-import"><FileUp size={15} />Import SVG or CSV<input aria-label="Geometry file" type="file" accept=".svg,.csv" hidden onChange={(event) => {
     const file = event.target.files?.[0]
@@ -141,38 +176,42 @@ export function Inspector({ model, selected, result, stale, converging, onChange
     <aside className="inspector" aria-label="Settings">
       <div className="panel-heading"><span>Settings</span><Info size={14} /></div>
       <div className="inspector-scroll">
-        {selected === 'geometry' && <Section eyebrow="Geometry sequence" title={isPolygon ? 'Simple polygon' : 'Parametric rectangle'} description={isPolygon ? 'An imported 2D boundary, normalized to Cartesian coordinates in metres.' : 'Dimensions propagate to the mesh and every subsequent study.'}>
-          {!isPolygon && <>
+        {selected === 'geometry' && <Section eyebrow="Geometry sequence" title={model.geometry.domains.length > 1 ? `${model.geometry.domains.length} geometry domains` : isPolygon ? 'Simple polygon' : 'Parametric rectangle'} description="Independent polygon domains share nodes only across complete matching edges.">
+          <label className="field-label"><span>Active domain</span><select aria-label="Active domain" value={domainIndex} onChange={(event) => setSelectedDomain(Number(event.target.value))}>{model.geometry.domains.map((domain, index) => <option key={domain.id} value={index}>{domain.name}</option>)}</select></label>
+          {!isPolygon && model.geometry.domains.length === 1 && <>
             <NumberField label="Width" value={model.geometry.width} unit="m" min={0.001} max={1000} step={0.01} onChange={(width) => onChange({ ...model, geometry: rectangleGeometry(width, model.geometry.height) })} />
             <NumberField label="Height" value={model.geometry.height} unit="m" min={0.001} max={1000} step={0.01} onChange={(height) => onChange({ ...model, geometry: rectangleGeometry(model.geometry.width, height) })} />
           </>}
           {isPolygon && <>
-            <div className="property-row"><span>Boundary vertices</span><strong>{model.geometry.vertices.length}</strong></div>
-            <div className="property-row"><span>Bounding box</span><strong>{model.geometry.width.toPrecision(4)} × {model.geometry.height.toPrecision(4)} m</strong></div>
-            <div className="property-row"><span>Domain area</span><strong>{signedPolygonArea(model.geometry.vertices).toPrecision(5)} m²</strong></div>
-            <button className="export-button" onClick={() => onChange({ ...model, geometry: rectangleGeometry(model.geometry.width, model.geometry.height) })}>Use parametric rectangle</button>
+            <div className="property-row"><span>Domain vertices</span><strong>{activeDomain.vertices.length}</strong></div>
+            <div className="property-row"><span>Global bounding box</span><strong>{model.geometry.width.toPrecision(4)} × {model.geometry.height.toPrecision(4)} m</strong></div>
+            <div className="property-row"><span>Active domain area</span><strong>{signedPolygonArea(activeDomain.vertices).toPrecision(5)} m²</strong></div>
+            {model.geometry.domains.length === 1 && <button className="export-button" onClick={() => onChange({ ...model, geometry: rectangleGeometry(model.geometry.width, model.geometry.height) })}>Use parametric rectangle</button>}
           </>}
+          <button className="study-button" disabled={model.geometry.domains.length >= 16} onClick={addDomain}>Add disconnected rectangle domain</button>
+          <button className="export-button" disabled={model.geometry.domains.length === 1} onClick={removeDomain}>Remove active domain</button>
           {geometryImport}
-          <div className="selection-card"><span className="selection-dot" />Domain 1 selected<strong>1 domain · {model.geometry.vertices.length} boundary segments</strong></div>
-          {isPolygon && <div className="solver-note neutral"><Info size={16} /><span>CSV: x,y rows. SVG: one polygon, polyline or linear path (M/L/H/V/Z). SVG Y is inverted; curves, holes and multiple subpaths are not supported.</span></div>}
-          {isPolygon && <div className="solver-note neutral"><Info size={16} /><span>Named conditions apply at the bounding-box extrema. Every other polygon edge keeps its natural boundary condition.</span></div>}
+          <div className="selection-card"><span className="selection-dot" />{activeDomain.name} selected<strong>{model.geometry.domains.length} {model.geometry.domains.length === 1 ? 'domain' : 'domains'} · {activeDomain.vertices.length} active boundary segments</strong></div>
+          {isPolygon && <div className="solver-note neutral"><Info size={16} /><span>CSV/SVG import replaces the geometry with one polygon. To build connected domains, use the composite preset or construct matching polygons through the API.</span></div>}
+          <div className="solver-note neutral"><Info size={16} /><span>Overlaps and partial-edge contacts are rejected. Internal matching edges become continuous material interfaces; named conditions apply only at global extrema.</span></div>
         </Section>}
 
-        {selected === 'material' && <Section eyebrow="Materials" title="Isotropic solid" description="Base properties with optional linear spatial gradients, c(x,y) = c₀ + gx x + gy y.">
-          <NumberField label="Thermal conductivity" value={model.material.conductivity} unit="W/(m·K)" min={0.000001} step={1} onChange={(conductivity) => onChange({ ...model, material: { ...model.material, conductivity } })} />
-          <NumberField label="Conductivity gradient X" value={model.material.gradients.conductivityX} unit="W/(m²·K)" step={1} onChange={(conductivityX) => onChange({ ...model, material: { ...model.material, gradients: { ...model.material.gradients, conductivityX } } })} />
-          <NumberField label="Conductivity gradient Y" value={model.material.gradients.conductivityY} unit="W/(m²·K)" step={1} onChange={(conductivityY) => onChange({ ...model, material: { ...model.material, gradients: { ...model.material.gradients, conductivityY } } })} />
-          <NumberField label="Density" value={model.material.density} unit="kg/m³" min={0.000001} step={100} onChange={(density) => onChange({ ...model, material: { ...model.material, density } })} />
-          <NumberField label="Heat capacity" value={model.material.heatCapacity} unit="J/(kg·K)" min={0.000001} step={25} onChange={(heatCapacity) => onChange({ ...model, material: { ...model.material, heatCapacity } })} />
-          <NumberField label="Relative permittivity" value={model.material.relativePermittivity} unit="εᵣ" min={0.000001} step={0.5} onChange={(relativePermittivity) => onChange({ ...model, material: { ...model.material, relativePermittivity } })} />
-          <NumberField label="Permittivity gradient X" value={model.material.gradients.permittivityX} unit="1/m" step={0.1} onChange={(permittivityX) => onChange({ ...model, material: { ...model.material, gradients: { ...model.material.gradients, permittivityX } } })} />
-          <NumberField label="Permittivity gradient Y" value={model.material.gradients.permittivityY} unit="1/m" step={0.1} onChange={(permittivityY) => onChange({ ...model, material: { ...model.material, gradients: { ...model.material.gradients, permittivityY } } })} />
-          <NumberField label="Young’s modulus" value={model.material.youngsModulus} unit="Pa" min={0.000001} max={1e15} step={1e9} onChange={(youngsModulus) => onChange({ ...model, material: { ...model.material, youngsModulus } })} />
-          <NumberField label="Young modulus gradient X" value={model.material.gradients.youngsModulusX} unit="Pa/m" step={1e9} onChange={(youngsModulusX) => onChange({ ...model, material: { ...model.material, gradients: { ...model.material.gradients, youngsModulusX } } })} />
-          <NumberField label="Young modulus gradient Y" value={model.material.gradients.youngsModulusY} unit="Pa/m" step={1e9} onChange={(youngsModulusY) => onChange({ ...model, material: { ...model.material, gradients: { ...model.material.gradients, youngsModulusY } } })} />
-          <NumberField label="Poisson’s ratio" value={model.material.poissonRatio} unit="ν" min={-0.99} max={0.499999} step={0.01} onChange={(poissonRatio) => onChange({ ...model, material: { ...model.material, poissonRatio } })} />
-          <NumberField label="Thermal expansion" value={model.material.thermalExpansion} unit="1/K" min={-0.01} max={0.01} step={0.000001} onChange={(thermalExpansion) => onChange({ ...model, material: { ...model.material, thermalExpansion } })} />
-          <div className="property-row"><span>Model</span><strong>Linear, isotropic</strong></div><div className="property-row"><span>Domain</span><strong>All domains</strong></div>
+        {selected === 'material' && <Section eyebrow="Materials" title={`${activeDomain.name} · isotropic solid`} description="Domain-specific properties with optional linear spatial gradients, c(x,y) = c₀ + gx x + gy y.">
+          <label className="field-label"><span>Material domain</span><select aria-label="Material domain" value={domainIndex} onChange={(event) => setSelectedDomain(Number(event.target.value))}>{model.geometry.domains.map((domain, index) => <option key={domain.id} value={index}>{domain.name}</option>)}</select></label>
+          <NumberField label="Thermal conductivity" value={activeMaterial.conductivity} unit="W/(m·K)" min={0.000001} step={1} onChange={(conductivity) => updateMaterial({ conductivity })} />
+          <NumberField label="Conductivity gradient X" value={activeMaterial.gradients.conductivityX} unit="W/(m²·K)" step={1} onChange={(conductivityX) => updateMaterial({ gradients: { ...activeMaterial.gradients, conductivityX } })} />
+          <NumberField label="Conductivity gradient Y" value={activeMaterial.gradients.conductivityY} unit="W/(m²·K)" step={1} onChange={(conductivityY) => updateMaterial({ gradients: { ...activeMaterial.gradients, conductivityY } })} />
+          <NumberField label="Density" value={activeMaterial.density} unit="kg/m³" min={0.000001} step={100} onChange={(density) => updateMaterial({ density })} />
+          <NumberField label="Heat capacity" value={activeMaterial.heatCapacity} unit="J/(kg·K)" min={0.000001} step={25} onChange={(heatCapacity) => updateMaterial({ heatCapacity })} />
+          <NumberField label="Relative permittivity" value={activeMaterial.relativePermittivity} unit="εᵣ" min={0.000001} step={0.5} onChange={(relativePermittivity) => updateMaterial({ relativePermittivity })} />
+          <NumberField label="Permittivity gradient X" value={activeMaterial.gradients.permittivityX} unit="1/m" step={0.1} onChange={(permittivityX) => updateMaterial({ gradients: { ...activeMaterial.gradients, permittivityX } })} />
+          <NumberField label="Permittivity gradient Y" value={activeMaterial.gradients.permittivityY} unit="1/m" step={0.1} onChange={(permittivityY) => updateMaterial({ gradients: { ...activeMaterial.gradients, permittivityY } })} />
+          <NumberField label="Young’s modulus" value={activeMaterial.youngsModulus} unit="Pa" min={0.000001} max={1e15} step={1e9} onChange={(youngsModulus) => updateMaterial({ youngsModulus })} />
+          <NumberField label="Young modulus gradient X" value={activeMaterial.gradients.youngsModulusX} unit="Pa/m" step={1e9} onChange={(youngsModulusX) => updateMaterial({ gradients: { ...activeMaterial.gradients, youngsModulusX } })} />
+          <NumberField label="Young modulus gradient Y" value={activeMaterial.gradients.youngsModulusY} unit="Pa/m" step={1e9} onChange={(youngsModulusY) => updateMaterial({ gradients: { ...activeMaterial.gradients, youngsModulusY } })} />
+          <NumberField label="Poisson’s ratio" value={activeMaterial.poissonRatio} unit="ν" min={-0.99} max={0.499999} step={0.01} onChange={(poissonRatio) => updateMaterial({ poissonRatio })} />
+          <NumberField label="Thermal expansion" value={activeMaterial.thermalExpansion} unit="1/K" min={-0.01} max={0.01} step={0.000001} onChange={(thermalExpansion) => updateMaterial({ thermalExpansion })} />
+          <div className="property-row"><span>Model</span><strong>Linear, isotropic</strong></div><div className="property-row"><span>Assignment</span><strong>{activeDomain.name}</strong></div>
         </Section>}
 
         {selected === 'physics' && <Section eyebrow="Heat transfer in solids" title="Energy balance" description="Stationary or transient conduction with a uniform volumetric heat source.">

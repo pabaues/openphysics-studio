@@ -1,7 +1,7 @@
-import { boundaryConditionOnEdge, boundarySide, geometryEdgesAt, meshBoundaryEdges, triangleCentroid } from './boundary'
+import { boundaryConditionOnEdge, boundaryOverrideKey, boundarySide, geometryEdgesAt, meshBoundaryEdges, triangleCentroid } from './boundary'
 import { solveHeat } from './heat'
 import { createModelMesh } from './mesh'
-import { youngsModulusAt } from './properties'
+import { materialForDomain, youngsModulusAt } from './properties'
 import { near, triangleGeometry } from './scalar'
 import { solveLinearSystem, type SparseRow } from './solver'
 import type { HeatModel, Mesh, StructuralBoundaryCondition, StructuralSimulationResult, TensorValue } from './types'
@@ -32,12 +32,14 @@ function prescribedDisplacement(condition: StructuralBoundaryCondition, side: Bo
 }
 
 function boundaryValue(model: HeatModel, x: number, y: number, dof: number): number | undefined {
-  for (const edge of geometryEdgesAt(model.geometry.vertices, { x, y })) {
-    const override = model.edgeBoundaries.elasticity[String(edge)]
-    if (!override) continue
-    const side = boundarySide(model.geometry.vertices, edge)
-    if ((override.type === 'roller' || override.type === 'normalDisplacement') && !side) throw new Error('Roller and normal-displacement edge selections require an axis-aligned edge.')
-    return prescribedDisplacement(override, side ?? 'left', dof)
+  for (const [domainIndex, domain] of model.geometry.domains.entries()) {
+    for (const edge of geometryEdgesAt(domain.vertices, { x, y })) {
+      const override = model.edgeBoundaries.elasticity[boundaryOverrideKey(domainIndex, edge)]
+      if (!override) continue
+      const side = boundarySide(domain.vertices, edge)
+      if ((override.type === 'roller' || override.type === 'normalDisplacement') && !side) throw new Error('Roller and normal-displacement edge selections require an axis-aligned edge.')
+      return prescribedDisplacement(override, side ?? 'left', dof)
+    }
   }
   const { width, height } = model.geometry
   const boundaries: Array<[boolean, StructuralBoundaryCondition, BoundarySide]> = [
@@ -126,10 +128,11 @@ export function solveElasticity(model: HeatModel): StructuralSimulationResult {
   })
   if (freeToGlobal.length === 0) throw new Error('All structural degrees of freedom are prescribed; no solve is required.')
 
-  const thermalStrains: TensorValue[] = mesh.triangles.map((triangle) => {
+  const thermalStrains: TensorValue[] = mesh.triangles.map((triangle, elementIndex) => {
     if (!thermal) return { xx: 0, yy: 0, xy: 0 }
     const temperature = triangle.reduce((sum, node) => sum + thermal.temperature[node]!, 0) / 3
-    const expansion = model.material.thermalExpansion * (temperature - model.elasticity.referenceTemperature)
+    const material = materialForDomain(model, mesh.triangleDomains?.[elementIndex] ?? 0)
+    const expansion = material.thermalExpansion * (temperature - model.elasticity.referenceTemperature)
     return { xx: expansion, yy: expansion, xy: 0 }
   })
   const rowMaps = freeToGlobal.map(() => new Map<number, number>())
@@ -139,7 +142,9 @@ export function solveElasticity(model: HeatModel): StructuralSimulationResult {
   for (const [elementIndex, triangle] of mesh.triangles.entries()) {
     const area = triangleGeometry(mesh, triangle).area
     const centroid = triangleCentroid(mesh, triangle)
-    const D = constitutiveMatrix(youngsModulusAt(model, centroid.x, centroid.y), model.material.poissonRatio, model.elasticity.planeState)
+    const domainIndex = mesh.triangleDomains?.[elementIndex] ?? 0
+    const material = materialForDomain(model, domainIndex)
+    const D = constitutiveMatrix(youngsModulusAt(model, centroid.x, centroid.y, domainIndex), material.poissonRatio, model.elasticity.planeState)
     const B = strainDisplacement(mesh, triangle)
     const DB = multiply(D, B)
     const thermalLoad = D.map((row) => row[0]! * thermalStrains[elementIndex]!.xx + row[1]! * thermalStrains[elementIndex]!.yy)
@@ -187,19 +192,21 @@ export function solveElasticity(model: HeatModel): StructuralSimulationResult {
     const elementStrain = tensorProduct(elementMatrices[elementIndex]!, elementDisplacement)
     const initial = thermalStrains[elementIndex]!
     const centroid = triangleCentroid(mesh, triangle)
-    const youngsModulus = youngsModulusAt(model, centroid.x, centroid.y)
+    const domainIndex = mesh.triangleDomains?.[elementIndex] ?? 0
+    const material = materialForDomain(model, domainIndex)
+    const youngsModulus = youngsModulusAt(model, centroid.x, centroid.y, domainIndex)
     const elementStress = tensorProduct(elementConstitutive[elementIndex]!, [elementStrain.xx - initial.xx, elementStrain.yy - initial.yy, elementStrain.xy])
     strain.push(elementStrain)
     stress.push(elementStress)
     const thermalZ = model.elasticity.planeState === 'planeStrain' ? youngsModulus * initial.xx : 0
-    const zz = model.elasticity.planeState === 'planeStrain' ? model.material.poissonRatio * (elementStress.xx + elementStress.yy) - thermalZ : 0
+    const zz = model.elasticity.planeState === 'planeStrain' ? material.poissonRatio * (elementStress.xx + elementStress.yy) - thermalZ : 0
     stresses.push(Math.sqrt(0.5 * ((elementStress.xx - elementStress.yy) ** 2 + (elementStress.yy - zz) ** 2 + (zz - elementStress.xx) ** 2) + 3 * elementStress.xy ** 2))
   })
   const magnitudes = displacement.map((value) => value.magnitude)
   return {
     physics: 'elasticity', solver: model.study.solver, mesh, displacement, strain, stress, vonMises: stresses,
     planeState: model.elasticity.planeState,
-    thermal: thermal ? { temperature: thermal.temperature, referenceTemperature: model.elasticity.referenceTemperature, expansion: model.material.thermalExpansion } : undefined,
+    thermal: thermal ? { temperature: thermal.temperature, referenceTemperature: model.elasticity.referenceTemperature, expansion: model.material.thermalExpansion, expansions: model.geometry.domains.map((_, domainIndex) => materialForDomain(model, domainIndex).thermalExpansion) } : undefined,
     converged: solution.converged, iterations: solution.iterations, relativeResidual: solution.relativeResidual,
     solveTimeMs: performance.now() - started,
     minimum: Math.min(...magnitudes), maximum: Math.max(...magnitudes),

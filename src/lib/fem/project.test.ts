@@ -26,7 +26,7 @@ describe('project persistence', () => {
       study: defaultModel.study,
     }
     const parsed = parseProjectJson(JSON.stringify(legacy))
-    expect(parsed.schemaVersion).toBe(7)
+    expect(parsed.schemaVersion).toBe(8)
     expect(parsed.activePhysics).toBe('heat')
     expect(parsed.material.relativePermittivity).toBe(1)
     expect(parsed.material.density).toBe(defaultModel.material.density)
@@ -46,7 +46,7 @@ describe('project persistence', () => {
     delete legacy.transient
     delete legacy.sweep
     const parsed = parseProjectJson(JSON.stringify(legacy))
-    expect(parsed.schemaVersion).toBe(7)
+    expect(parsed.schemaVersion).toBe(8)
     expect(parsed.material.conductivity).toBe(123)
     expect(parsed.study).toEqual({ type: 'stationary', tolerance: 1e-6, maxIterations: 500, solver: 'iterative', preconditioner: 'jacobi', ordering: 'rcm', manufacturedSolution: 'none' })
     expect(parsed.transient).toEqual(defaultModel.transient)
@@ -60,7 +60,7 @@ describe('project persistence', () => {
     legacy.mesh = { nx: 18, ny: 10, refinement: 2 }
     legacy.study = { type: 'stationary', tolerance: 1e-9, maxIterations: 800 }
     const parsed = parseProjectJson(JSON.stringify(legacy))
-    expect(parsed.schemaVersion).toBe(7)
+    expect(parsed.schemaVersion).toBe(8)
     expect(parsed.name).toBe('Version 5 preserved model')
     expect(parsed.geometry).toEqual(defaultModel.geometry)
     expect(parsed.mesh).toEqual({ nx: 18, ny: 10, refinement: 2 })
@@ -76,7 +76,7 @@ describe('project persistence', () => {
     }
     delete legacy.elasticity
     const parsed = parseProjectJson(JSON.stringify(legacy))
-    expect(parsed.schemaVersion).toBe(7)
+    expect(parsed.schemaVersion).toBe(8)
     expect(parsed.material.youngsModulus).toBe(defaultModel.material.youngsModulus)
     expect(parsed.elasticity).toEqual(defaultModel.elasticity)
   })
@@ -89,7 +89,7 @@ describe('project persistence', () => {
       mesh: { nx: 12, ny: 8 },
     }
     const parsed = parseProjectJson(JSON.stringify(legacy))
-    expect(parsed.schemaVersion).toBe(7)
+    expect(parsed.schemaVersion).toBe(8)
     expect(parsed.geometry.shape).toBe('rectangle')
     expect(parsed.geometry.vertices).toHaveLength(4)
     expect(parsed.geometry.vertices[2]).toEqual({ x: 0.2, y: 0.1 })
@@ -112,11 +112,25 @@ describe('project persistence', () => {
     delete legacy.edgeBoundaries
     delete legacy.adaptive
     const parsed = parseProjectJson(JSON.stringify(legacy))
-    expect(parsed.schemaVersion).toBe(7)
+    expect(parsed.schemaVersion).toBe(8)
     expect(parsed.study).toEqual({ type: 'stationary', solver: 'direct', tolerance: 1e-8, maxIterations: 900, preconditioner: 'jacobi', ordering: 'rcm', manufacturedSolution: 'none' })
     expect(parsed.material.thermalExpansion).toBe(defaultModel.material.thermalExpansion)
     expect(parsed.custom).toEqual(defaultModel.custom)
     expect(parsed.adaptive).toEqual(defaultModel.adaptive)
+  })
+
+  it('migrates version 7 projects to one explicit domain and preserves the base material', () => {
+    const legacy = structuredClone(defaultModel) as unknown as Record<string, unknown>
+    legacy.schemaVersion = 7
+    const geometry = { ...(legacy.geometry as Record<string, unknown>) }
+    delete geometry.domains
+    legacy.geometry = geometry
+    delete legacy.domainMaterials
+    const parsed = parseProjectJson(JSON.stringify(legacy))
+    expect(parsed.schemaVersion).toBe(8)
+    expect(parsed.geometry.domains).toEqual([{ id: 'domain-1', name: 'Domain 1', vertices: defaultModel.geometry.vertices }])
+    expect(parsed.domainMaterials).toEqual({})
+    expect(parsed.material).toEqual(defaultModel.material)
   })
 
   it('rejects dimensions inconsistent with stored vertices', () => {
@@ -124,7 +138,7 @@ describe('project persistence', () => {
     rectangle.geometry.width = 0.2
     expect(() => parseProjectJson(JSON.stringify(rectangle))).toThrow(/Rectangle vertices/)
     const polygon = structuredClone(defaultModel)
-    polygon.geometry = { shape: 'polygon', width: 0.2, height: 0.1, vertices: polygon.geometry.vertices }
+    polygon.geometry = { ...polygon.geometry, shape: 'polygon', width: 0.2, height: 0.1 }
     expect(() => parseProjectJson(JSON.stringify(polygon))).toThrow(/bounding box/)
   })
 })

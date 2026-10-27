@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import { polygonGeometry, rectangleGeometry } from './geometry'
-import { defaultModel, type HeatModel } from './types'
+import { multiDomainGeometry, polygonGeometry, rectangleGeometry } from './geometry'
+import { defaultModel, type HeatModel, type Material } from './types'
 
 const thermalBoundarySchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('temperature'), value: z.number().min(-273.15).max(10000) }),
@@ -172,7 +172,7 @@ const v7ModelObject = v5ModelObject.extend({
   adaptive: z.object({ levels: z.number().int().min(1).max(5), markFraction: z.number().min(0.05).max(1) }),
 })
 
-export const heatModelSchema = v7ModelObject.superRefine((model, context) => {
+const v7ModelSchema = v7ModelObject.superRefine((model, context) => {
   if (model.study.type === 'transient' && model.activePhysics !== 'heat') context.addIssue({ code: 'custom', message: 'Transient studies currently require Heat Transfer.' })
   validateGeometry(model, context)
   for (const vertex of model.geometry.vertices) {
@@ -180,10 +180,51 @@ export const heatModelSchema = v7ModelObject.superRefine((model, context) => {
     if (model.material.relativePermittivity + model.material.gradients.permittivityX * vertex.x + model.material.gradients.permittivityY * vertex.y <= 0) context.addIssue({ code: 'custom', message: 'Relative permittivity must remain positive at every vertex.' })
     if (model.material.youngsModulus + model.material.gradients.youngsModulusX * vertex.x + model.material.gradients.youngsModulusY * vertex.y <= 0) context.addIssue({ code: 'custom', message: 'Young’s modulus must remain positive at every vertex.' })
   }
+})
+type V7Model = z.infer<typeof v7ModelSchema>
+
+const domainSchema = z.object({ id: z.string().regex(/^domain-[A-Za-z0-9_-]+$/), name: z.string().trim().min(1).max(80), vertices: z.array(vertexSchema).min(3).max(256) })
+const materialV8Schema = v7ModelObject.shape.material
+const v8ModelObject = v7ModelObject.extend({
+  schemaVersion: z.literal(8),
+  geometry: z.object({
+    shape: z.enum(['rectangle', 'polygon']), width: z.number().positive().max(1000), height: z.number().positive().max(1000),
+    vertices: z.array(vertexSchema).min(3).max(256), domains: z.array(domainSchema).min(1).max(16),
+  }),
+  domainMaterials: z.record(z.string(), materialV8Schema),
+})
+
+export const heatModelSchema = v8ModelObject.superRefine((model, context) => {
+  if (model.study.type === 'transient' && model.activePhysics !== 'heat') context.addIssue({ code: 'custom', message: 'Transient studies currently require Heat Transfer.' })
+  try {
+    const normalized = multiDomainGeometry(model.geometry.domains)
+    const tolerance = Math.max(model.geometry.width, model.geometry.height) * 1e-9
+    if (Math.abs(normalized.width - model.geometry.width) > tolerance || Math.abs(normalized.height - model.geometry.height) > tolerance) context.addIssue({ code: 'custom', message: 'Geometry dimensions must match the multidomain bounding box.' })
+    model.geometry.domains.forEach((domain, domainIndex) => domain.vertices.forEach((vertex, vertexIndex) => {
+      const expected = normalized.domains[domainIndex]!.vertices[vertexIndex]!
+      if (Math.abs(vertex.x - expected.x) > tolerance || Math.abs(vertex.y - expected.y) > tolerance) context.addIssue({ code: 'custom', message: `Domain ${domainIndex + 1} vertices must use normalized global coordinates.` })
+    }))
+    if (model.geometry.vertices.some((vertex, index) => Math.abs(vertex.x - normalized.vertices[index]!.x) > tolerance || Math.abs(vertex.y - normalized.vertices[index]!.y) > tolerance)) context.addIssue({ code: 'custom', message: 'Legacy boundary vertices must match domain 1.' })
+    if (model.geometry.shape === 'rectangle' && model.geometry.domains.length === 1) validateGeometry({ geometry: model.geometry }, context)
+  } catch (error) {
+    context.addIssue({ code: 'custom', message: error instanceof Error ? error.message : 'Invalid multidomain geometry.' })
+  }
+  const materialAt = (domainIndex: number): Material => domainIndex === 0 ? model.material : model.domainMaterials[model.geometry.domains[domainIndex]!.id]!
+  model.geometry.domains.forEach((domain, domainIndex) => {
+    const material = materialAt(domainIndex)
+    if (!material) context.addIssue({ code: 'custom', message: `Missing material for ${domain.name}.` })
+    else for (const vertex of domain.vertices) {
+      if (material.conductivity + material.gradients.conductivityX * vertex.x + material.gradients.conductivityY * vertex.y <= 0) context.addIssue({ code: 'custom', message: `Thermal conductivity must remain positive in ${domain.name}.` })
+      if (material.relativePermittivity + material.gradients.permittivityX * vertex.x + material.gradients.permittivityY * vertex.y <= 0) context.addIssue({ code: 'custom', message: `Relative permittivity must remain positive in ${domain.name}.` })
+      if (material.youngsModulus + material.gradients.youngsModulusX * vertex.x + material.gradients.youngsModulusY * vertex.y <= 0) context.addIssue({ code: 'custom', message: `Young’s modulus must remain positive in ${domain.name}.` })
+    }
+  })
   for (const boundaries of Object.values(model.edgeBoundaries)) {
     for (const key of Object.keys(boundaries)) {
-      const edge = Number(key)
-      if (!Number.isInteger(edge) || edge < 0 || edge >= model.geometry.vertices.length) context.addIssue({ code: 'custom', message: `Invalid boundary edge index: ${key}.` })
+      const match = /^(?:(\d+):)?(\d+)$/.exec(key)
+      const domain = match?.[1] === undefined ? 0 : Number(match?.[1])
+      const edge = Number(match?.[2])
+      if (!match || !model.geometry.domains[domain] || edge >= model.geometry.domains[domain]!.vertices.length) context.addIssue({ code: 'custom', message: `Invalid boundary edge index: ${key}.` })
     }
   }
 })
@@ -218,7 +259,7 @@ function migrateV5(model: V5Model): V6Model {
   return { ...model, schemaVersion: 6, study: { ...model.study, solver: 'iterative' } }
 }
 
-function migrateV6(model: V6Model): HeatModel {
+function migrateV6(model: V6Model): V7Model {
   return {
     ...model, schemaVersion: 7,
     material: { ...model.material, thermalExpansion: defaultModel.material.thermalExpansion, gradients: structuredClone(defaultModel.material.gradients) },
@@ -228,22 +269,31 @@ function migrateV6(model: V6Model): HeatModel {
   }
 }
 
+function migrateV7(model: V7Model): HeatModel {
+  return {
+    ...model, schemaVersion: 8,
+    geometry: { ...model.geometry, domains: [{ id: 'domain-1', name: 'Domain 1', vertices: structuredClone(model.geometry.vertices) }] },
+    domainMaterials: {},
+  }
+}
+
 export function parseProjectJson(source: string): HeatModel {
   const json: unknown = JSON.parse(source)
   if (typeof json === 'object' && json !== null && 'schemaVersion' in json) {
     if (json.schemaVersion === 1) {
       const legacy = legacyModelSchema.parse(json)
-      return migrateV6(migrateV5(migrateV4(migrateV3(migrateV2({
+      return migrateV7(migrateV6(migrateV5(migrateV4(migrateV3(migrateV2({
         ...legacy, schemaVersion: 2, activePhysics: 'heat',
         material: { ...legacy.material, relativePermittivity: 1 },
         electrostatics: structuredClone(defaultModel.electrostatics), convergence: { levels: 3 },
-      })))))
+      }))))))
     }
-    if (json.schemaVersion === 2) return migrateV6(migrateV5(migrateV4(migrateV3(migrateV2(v2ModelSchema.parse(json))))))
-    if (json.schemaVersion === 3) return migrateV6(migrateV5(migrateV4(migrateV3(v3ModelSchema.parse(json)))))
-    if (json.schemaVersion === 4) return migrateV6(migrateV5(migrateV4(v4ModelSchema.parse(json))))
-    if (json.schemaVersion === 5) return migrateV6(migrateV5(v5ModelSchema.parse(json)))
-    if (json.schemaVersion === 6) return migrateV6(v6ModelSchema.parse(json))
+    if (json.schemaVersion === 2) return migrateV7(migrateV6(migrateV5(migrateV4(migrateV3(migrateV2(v2ModelSchema.parse(json)))))))
+    if (json.schemaVersion === 3) return migrateV7(migrateV6(migrateV5(migrateV4(migrateV3(v3ModelSchema.parse(json))))))
+    if (json.schemaVersion === 4) return migrateV7(migrateV6(migrateV5(migrateV4(v4ModelSchema.parse(json)))))
+    if (json.schemaVersion === 5) return migrateV7(migrateV6(migrateV5(v5ModelSchema.parse(json))))
+    if (json.schemaVersion === 6) return migrateV7(migrateV6(v6ModelSchema.parse(json)))
+    if (json.schemaVersion === 7) return migrateV7(v7ModelSchema.parse(json))
   }
   return heatModelSchema.parse(json)
 }

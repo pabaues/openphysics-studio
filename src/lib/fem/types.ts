@@ -2,6 +2,30 @@ export const VACUUM_PERMITTIVITY = 8.8541878128e-12
 
 export type ActivePhysics = 'heat' | 'electrostatics' | 'elasticity' | 'custom'
 
+export interface Material {
+  conductivity: number
+  relativePermittivity: number
+  density: number
+  heatCapacity: number
+  youngsModulus: number
+  poissonRatio: number
+  thermalExpansion: number
+  gradients: {
+    conductivityX: number
+    conductivityY: number
+    permittivityX: number
+    permittivityY: number
+    youngsModulusX: number
+    youngsModulusY: number
+  }
+}
+
+export interface GeometryDomain {
+  id: string
+  name: string
+  vertices: MeshNode[]
+}
+
 export type BoundaryCondition =
   | { type: 'temperature'; value: number }
   | { type: 'insulated' }
@@ -36,7 +60,7 @@ export type SweepParameter =
   | 'electrostatics.chargeDensity'
 
 export interface HeatModel {
-  schemaVersion: 7
+  schemaVersion: 8
   name: string
   activePhysics: ActivePhysics
   geometry: {
@@ -44,24 +68,11 @@ export interface HeatModel {
     width: number
     height: number
     vertices: MeshNode[]
+    domains: GeometryDomain[]
   }
-  material: {
-    conductivity: number
-    relativePermittivity: number
-    density: number
-    heatCapacity: number
-    youngsModulus: number
-    poissonRatio: number
-    thermalExpansion: number
-    gradients: {
-      conductivityX: number
-      conductivityY: number
-      permittivityX: number
-      permittivityY: number
-      youngsModulusX: number
-      youngsModulusY: number
-    }
-  }
+  /** Material of domain 0; additional domain materials are keyed by domain id. */
+  material: Material
+  domainMaterials: Record<string, Material>
   physics: {
     heatSource: number
     leftTemperature: number
@@ -150,6 +161,8 @@ export interface BaseMesh {
   height: number
   centroid: MeshNode
   refinement: number
+  /** Geometry-domain index per triangle; omitted means domain 0 for legacy meshes. */
+  triangleDomains?: number[]
 }
 
 export interface RectangularMesh extends BaseMesh {
@@ -227,6 +240,7 @@ export interface StructuralSimulationResult extends BaseSimulationResult {
     temperature: number[]
     referenceTemperature: number
     expansion: number
+    expansions?: number[]
   }
 }
 
@@ -283,15 +297,20 @@ export interface AdaptiveReport {
 }
 
 export const defaultModel: HeatModel = {
-  schemaVersion: 7,
+  schemaVersion: 8,
   name: 'Thermal plate study',
   activePhysics: 'heat',
-  geometry: { shape: 'rectangle', width: 0.1, height: 0.05, vertices: [{ x: 0, y: 0 }, { x: 0.1, y: 0 }, { x: 0.1, y: 0.05 }, { x: 0, y: 0.05 }] },
+  geometry: {
+    shape: 'rectangle', width: 0.1, height: 0.05,
+    vertices: [{ x: 0, y: 0 }, { x: 0.1, y: 0 }, { x: 0.1, y: 0.05 }, { x: 0, y: 0.05 }],
+    domains: [{ id: 'domain-1', name: 'Domain 1', vertices: [{ x: 0, y: 0 }, { x: 0.1, y: 0 }, { x: 0.1, y: 0.05 }, { x: 0, y: 0.05 }] }],
+  },
   material: {
     conductivity: 45, relativePermittivity: 1, density: 7850, heatCapacity: 475,
     youngsModulus: 200e9, poissonRatio: 0.3, thermalExpansion: 12e-6,
     gradients: { conductivityX: 0, conductivityY: 0, permittivityX: 0, permittivityY: 0, youngsModulusX: 0, youngsModulusY: 0 },
   },
+  domainMaterials: {},
   physics: {
     heatSource: 250000,
     leftTemperature: 20,

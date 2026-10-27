@@ -1,7 +1,7 @@
 import { edgeOverride, triangleCentroid } from './boundary'
 import { manufacturedSource } from './manufactured'
 import { createModelMesh } from './mesh'
-import { conductivityAt } from './properties'
+import { conductivityAt, materialForDomain } from './properties'
 import { near, scalarGradient, solveScalar, type ScalarProblem } from './scalar'
 import type { HeatModel, Mesh, SimulationResult, TransientFrame } from './types'
 
@@ -13,7 +13,7 @@ function heatProblem(model: HeatModel): ScalarProblem {
     nx: model.mesh.nx,
     ny: model.mesh.ny,
     coefficient: model.material.conductivity,
-    coefficientAt: (x, y) => conductivityAt(model, x, y),
+    coefficientAt: (x, y, domainIndex) => conductivityAt(model, x, y, domainIndex),
     source: model.physics.heatSource,
     sourceAt: (x, y) => manufacturedSource(model, x, y) ?? model.physics.heatSource,
     tolerance: model.study.tolerance,
@@ -42,7 +42,7 @@ function thermalResult(model: HeatModel, solution: ReturnType<typeof solveScalar
     temperature: solution.values,
     flux: solution.gradient.map((gradient, index) => {
       const centroid = triangleCentroid(solution.mesh, solution.mesh.triangles[index]!)
-      const conductivity = conductivityAt(model, centroid.x, centroid.y)
+      const conductivity = conductivityAt(model, centroid.x, centroid.y, solution.mesh.triangleDomains?.[index] ?? 0)
       return { x: -conductivity * gradient.x, y: -conductivity * gradient.y, magnitude: conductivity * gradient.magnitude }
     }),
     converged: solution.converged,
@@ -69,7 +69,10 @@ function solveTransientHeat(model: HeatModel): SimulationResult {
   const mesh = createModelMesh(model)
   const settings = model.transient
   const dt = settings.duration / settings.timeSteps
-  const reactionCoefficient = model.material.density * model.material.heatCapacity / dt
+  const reactionCoefficient = (domainIndex: number) => {
+    const material = materialForDomain(model, domainIndex)
+    return material.density * material.heatCapacity / dt
+  }
   let temperature = Array<number>(mesh.nodes.length).fill(settings.initialTemperature)
   const frames = [frame(0, temperature)]
   let final: SimulationResult | undefined
@@ -93,9 +96,9 @@ function solveTransientHeat(model: HeatModel): SimulationResult {
     }
   }
   if (!final) throw new Error('The transient study did not execute a time step.')
-  const conductivities = mesh.triangles.map((triangle) => {
+  const conductivities = mesh.triangles.map((triangle, elementIndex) => {
     const centroid = triangleCentroid(mesh, triangle)
-    return conductivityAt(model, centroid.x, centroid.y)
+    return conductivityAt(model, centroid.x, centroid.y, mesh.triangleDomains?.[elementIndex] ?? 0)
   })
   return { ...final, converged, iterations, relativeResidual, solveTimeMs, transient: { frames, timeSteps: settings.timeSteps, conductivity: model.material.conductivity, conductivities } }
 }

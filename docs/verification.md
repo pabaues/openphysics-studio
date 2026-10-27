@@ -72,18 +72,27 @@ Las pruebas de `solver.test.ts`, `direct.integration.test.ts` y `advanced.test.t
 
 El módulo WASM se genera de forma reproducible desde `dot.wat`, se instancia síncronamente y tiene fallback JavaScript. Solo acelera potencialmente un kernel; no se afirma una mejora global sin medición específica.
 
+## Geometría multidominio y materiales
+
+`src/lib/fem/multidomain.test.ts` verifica dos cuadrados de área unidad que comparten una arista completa, con nodos coincidentes en la interfaz y 32 triángulos etiquetados por dominio:
+
+- **Resistencias térmica y eléctrica en serie.** Con conductividades/permitividades `1` y `2`, potencial o temperatura `0` y `30` en los extremos, se reproduce `u = 20x` en el primer dominio y `u = 10 + 10x` en el segundo. También se comprueba flujo constante, continuidad nodal, integrales y medias por dominio y la salida VTK `domain_id`.
+- **Dilatación térmica por material.** Con `α₁ = 10⁻⁵ K⁻¹`, `α₂ = 2×10⁻⁵ K⁻¹` y `ΔT = 80 K`, el desplazamiento longitudinal reproduce la integral piecewise de `αΔT`. Los apoyos superior e inferior impiden la expansión transversal, por lo que se verifica por separado la tensión `σyy = −EαΔT` y la ausencia de `σxx` y cortante para `ν = 0`.
+- **Validación geométrica.** Se rechazan solapamientos, contactos parciales de arista y uniones en T; se permiten regiones disjuntas y contactos por vértices.
+- **Adaptación y persistencia.** La bisección local conserva etiquetas y áreas por dominio. El esquema v8 conserva asignaciones y materiales, y exige material para cada dominio.
+
 ## Geometría, persistencia y navegador
 
-La suite también comprueba importación/normalización SVG/CSV, rechazo de auto-intersecciones, refinamiento rojo, campos afines en mallas no estructuradas, integración P1, sondas, barridos y exportadores. `project.test.ts` recorre migraciones aditivas v1→v7, incluida v6→v7, firmas estables y validación geométrica.
+La suite también comprueba importación/normalización SVG/CSV, rechazo de auto-intersecciones, refinamiento rojo, campos afines en mallas no estructuradas, integración P1, sondas, barridos y exportadores. `project.test.ts` recorre migraciones aditivas v1→v8, incluida v7→v8, firmas estables y validación geométrica.
 
-El ensayo de navegador cubre Worker, invalidación de respuestas obsoletas, ambos solvers, IC(0), RCM/natural, ecuación personalizada, error exacto, adaptación, transitorios, polígonos, elasticidad, barridos y descargas. Las capturas se guardan fuera del repositorio y el servidor temporal se detiene.
+El ensayo de navegador cubre Worker, invalidación de respuestas obsoletas, ambos solvers, IC(0), RCM/natural, ecuación personalizada, error exacto, adaptación, transitorios, polígonos, geometría multidominio conectada y disjunta, edición de materiales por dominio, elasticidad, barridos y descargas. Las capturas se guardan fuera del repositorio y el servidor temporal se detiene.
 
 ## Límites actuales
 
-- Un único dominio 2D, un material isotrópico y triángulos P1.
+- Hasta 16 dominios poligonales 2D, cada uno con un material isotrópico, y triángulos P1. Las interfaces deben compartir aristas completas coincidentes; no hay particionado automático de geometrías.
 - Sin CAD, agujeros, curvas, axisimetría, 3D, elementos de orden superior ni h/p adaptativo.
 - Acoplamiento térmico–estructural solo unidireccional y estacionario.
-- Ecuación personalizada de coeficientes constantes; sin parser de expresiones ni plugins.
+- Ecuación personalizada de coeficientes constantes; sin parser de expresiones ni plugins. Las referencias manufacturadas se limitan a un dominio.
 - Sin no linealidad, contacto, dinámica estructural, autovalores, frecuencia, CFD o sistemas algebraicos generales.
 - Un Web Worker secuencial; sin paralelismo multinúcleo ni cancelación inmediata.
 

@@ -42,6 +42,7 @@ export function manufacturedError(model: HeatModel, result: AnySimulationResult)
 export function validateManufacturedModel(model: HeatModel): void {
   if (model.study.manufacturedSolution === 'none') return
   if (model.activePhysics === 'elasticity' || model.study.type === 'transient') throw new Error('Manufactured convergence currently supports stationary scalar physics.')
+  if (model.geometry.domains.length > 1) throw new Error('Manufactured references currently require a single domain; use successive-grid convergence for multidomain models.')
   if (model.study.manufacturedSolution === 'scalarSine') {
     if (model.geometry.shape !== 'rectangle') throw new Error('The scalar sine benchmark requires a rectangular domain with zero Dirichlet conditions on all four sides.')
     const gradients = model.material.gradients

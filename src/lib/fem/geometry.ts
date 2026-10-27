@@ -1,9 +1,10 @@
-import type { HeatModel, MeshNode } from './types'
+import type { GeometryDomain, HeatModel, MeshNode } from './types'
 
 export function rectangleGeometry(width: number, height: number): HeatModel['geometry'] {
+  const vertices = [{ x: 0, y: 0 }, { x: width, y: 0 }, { x: width, y: height }, { x: 0, y: height }]
   return {
-    shape: 'rectangle', width, height,
-    vertices: [{ x: 0, y: 0 }, { x: width, y: 0 }, { x: width, y: height }, { x: 0, y: height }],
+    shape: 'rectangle', width, height, vertices,
+    domains: [{ id: 'domain-1', name: 'Domain 1', vertices: vertices.map((vertex) => ({ ...vertex })) }],
   }
 }
 
@@ -81,7 +82,80 @@ export function polygonGeometry(input: MeshNode[]): HeatModel['geometry'] {
   const area = signedPolygonArea(vertices)
   if (!(width > 0) || !(height > 0) || !(area > Math.max(width, height) ** 2 * 1e-16)) throw new Error('The polygon must enclose a nonzero area.')
   if (width > 1000 || height > 1000 || width < 0.000001 || height < 0.000001) throw new Error('Polygon dimensions must be between 1 μm and 1000 m.')
-  return { shape: 'polygon', width, height, vertices }
+  return { shape: 'polygon', width, height, vertices, domains: [{ id: 'domain-1', name: 'Domain 1', vertices: vertices.map((vertex) => ({ ...vertex })) }] }
+}
+
+function pointInPolygon(point: MeshNode, vertices: MeshNode[]): boolean {
+  let inside = false
+  for (let index = 0; index < vertices.length; index += 1) {
+    const a = vertices[index]!
+    const b = vertices[(index + 1) % vertices.length]!
+    if (onSegment(a, b, point, 1e-9)) return false
+    if ((a.y > point.y) !== (b.y > point.y) && point.x < (b.x - a.x) * (point.y - a.y) / (b.y - a.y) + a.x) inside = !inside
+  }
+  return inside
+}
+
+function samePoint(a: MeshNode, b: MeshNode, tolerance: number): boolean {
+  return distance(a, b) <= tolerance
+}
+
+/** Rejects overlap and nonconforming partial-edge contacts; identical shared edges are valid interfaces. */
+export function validateDomainLayout(domains: GeometryDomain[]): void {
+  const tolerance = 1e-8
+  for (let left = 0; left < domains.length; left += 1) {
+    for (let right = left + 1; right < domains.length; right += 1) {
+      const aDomain = domains[left]!
+      const bDomain = domains[right]!
+      for (let ai = 0; ai < aDomain.vertices.length; ai += 1) {
+        const a = aDomain.vertices[ai]!
+        const b = aDomain.vertices[(ai + 1) % aDomain.vertices.length]!
+        for (let bi = 0; bi < bDomain.vertices.length; bi += 1) {
+          const c = bDomain.vertices[bi]!
+          const d = bDomain.vertices[(bi + 1) % bDomain.vertices.length]!
+          if (!segmentsIntersect(a, b, c, d, tolerance)) continue
+          const sharedEndpoints = samePoint(a, c, tolerance) || samePoint(a, d, tolerance) || samePoint(b, c, tolerance) || samePoint(b, d, tolerance)
+          const identical = (samePoint(a, c, tolerance) && samePoint(b, d, tolerance)) || (samePoint(a, d, tolerance) && samePoint(b, c, tolerance))
+          if (identical) continue
+          const collinear = Math.abs(orientation(a, b, c)) <= tolerance && Math.abs(orientation(a, b, d)) <= tolerance
+          if (collinear) {
+            const horizontal = Math.abs(b.x - a.x) >= Math.abs(b.y - a.y)
+            const overlap = horizontal
+              ? Math.min(Math.max(a.x, b.x), Math.max(c.x, d.x)) - Math.max(Math.min(a.x, b.x), Math.min(c.x, d.x))
+              : Math.min(Math.max(a.y, b.y), Math.max(c.y, d.y)) - Math.max(Math.min(a.y, b.y), Math.min(c.y, d.y))
+            if (overlap > tolerance) throw new Error(`Domains ${left + 1} and ${right + 1} must be disjoint or share complete matching edges; overlaps and partial-edge contacts are not supported.`)
+            continue
+          }
+          if (!sharedEndpoints) {
+            throw new Error(`Domains ${left + 1} and ${right + 1} must be disjoint or share complete matching edges; overlaps and partial-edge contacts are not supported (edges ${ai} and ${bi}).`)
+          }
+        }
+      }
+      if (pointInPolygon(aDomain.vertices[0]!, bDomain.vertices) || pointInPolygon(bDomain.vertices[0]!, aDomain.vertices)) {
+        throw new Error(`Domains ${left + 1} and ${right + 1} overlap.`)
+      }
+    }
+  }
+}
+
+/** Builds a global-coordinate geometry from independent simple polygon domains. */
+export function multiDomainGeometry(input: GeometryDomain[]): HeatModel['geometry'] {
+  if (input.length < 1 || input.length > 16) throw new Error('A model requires between 1 and 16 geometry domains.')
+  if (new Set(input.map((domain) => domain.id)).size !== input.length) throw new Error('Geometry domain ids must be unique.')
+  const domains = input.map((domain, index) => ({ id: domain.id, name: domain.name.trim() || `Domain ${index + 1}`, vertices: cleanVertices(domain.vertices) }))
+  domains.forEach((domain, index) => {
+    if (signedPolygonArea(domain.vertices) <= 1e-16) throw new Error(`Domain ${index + 1} must enclose a nonzero area.`)
+  })
+  validateDomainLayout(domains)
+  const all = domains.flatMap((domain) => domain.vertices)
+  const minX = Math.min(...all.map((point) => point.x))
+  const minY = Math.min(...all.map((point) => point.y))
+  const shifted = domains.map((domain) => ({ ...domain, vertices: domain.vertices.map((point) => ({ x: point.x - minX, y: point.y - minY })) }))
+  const points = shifted.flatMap((domain) => domain.vertices)
+  const width = Math.max(...points.map((point) => point.x))
+  const height = Math.max(...points.map((point) => point.y))
+  if (width > 1000 || height > 1000 || width < 0.000001 || height < 0.000001) throw new Error('Geometry dimensions must be between 1 μm and 1000 m.')
+  return { shape: 'polygon', width, height, vertices: shifted[0]!.vertices, domains: shifted }
 }
 
 function parseCsv(source: string): MeshNode[] {
