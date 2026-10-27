@@ -1,8 +1,8 @@
-import type { ConvergenceReport } from './types'
+import type { AdaptiveReport, ConvergenceReport } from './types'
 import type { AnySimulationResult, HeatModel } from './types'
 import type { SweepReport } from './sweep'
 
-export type StudyJobAction = 'compute' | 'convergence' | 'sweep'
+export type StudyJobAction = 'compute' | 'convergence' | 'adaptive' | 'sweep'
 
 export interface StudyJobRequest {
   id: number
@@ -10,7 +10,7 @@ export interface StudyJobRequest {
   model: HeatModel
 }
 
-export type StudyJobResult = AnySimulationResult | ConvergenceReport | SweepReport
+export type StudyJobResult = AnySimulationResult | ConvergenceReport | AdaptiveReport | SweepReport
 
 export type StudyJobResponse =
   | { id: number; ok: true; result: StudyJobResult }
@@ -47,6 +47,7 @@ export function createStudyJobClient() {
   return {
     compute: async (model: HeatModel) => await run('compute', model) as AnySimulationResult,
     convergence: async (model: HeatModel) => await run('convergence', model) as ConvergenceReport,
+    adaptive: async (model: HeatModel) => await run('adaptive', model) as AdaptiveReport,
     sweep: async (model: HeatModel) => await run('sweep', model) as SweepReport,
     dispose: () => {
       worker.terminate()

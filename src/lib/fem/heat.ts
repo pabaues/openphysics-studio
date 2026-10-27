@@ -1,6 +1,9 @@
+import { edgeOverride, triangleCentroid } from './boundary'
+import { manufacturedSource } from './manufactured'
 import { createModelMesh } from './mesh'
+import { conductivityAt } from './properties'
 import { near, scalarGradient, solveScalar, type ScalarProblem } from './scalar'
-import type { HeatModel, SimulationResult, TransientFrame } from './types'
+import type { HeatModel, Mesh, SimulationResult, TransientFrame } from './types'
 
 function heatProblem(model: HeatModel): ScalarProblem {
   const { width, height } = model.geometry
@@ -10,11 +13,18 @@ function heatProblem(model: HeatModel): ScalarProblem {
     nx: model.mesh.nx,
     ny: model.mesh.ny,
     coefficient: model.material.conductivity,
+    coefficientAt: (x, y) => conductivityAt(model, x, y),
     source: model.physics.heatSource,
+    sourceAt: (x, y) => manufacturedSource(model, x, y) ?? model.physics.heatSource,
     tolerance: model.study.tolerance,
     maxIterations: model.study.maxIterations,
     solver: model.study.solver,
+    preconditioner: model.study.preconditioner,
+    ordering: model.study.ordering,
     prescribedValue: (x, y) => {
+      if (model.study.manufacturedSolution === 'scalarSine') return near(x, 0, width) || near(x, width, width) || near(y, 0, height) || near(y, height, height) ? 0 : undefined
+      const override = edgeOverride(model, 'heat', { x, y })
+      if (override) return override.type === 'temperature' ? override.value : undefined
       if (near(x, 0, width)) return model.physics.leftTemperature
       if (near(x, width, width)) return model.physics.rightTemperature
       if (near(y, 0, height) && model.physics.bottom.type === 'temperature') return model.physics.bottom.value
@@ -30,11 +40,11 @@ function thermalResult(model: HeatModel, solution: ReturnType<typeof solveScalar
     solver: model.study.solver,
     mesh: solution.mesh,
     temperature: solution.values,
-    flux: solution.gradient.map((gradient) => ({
-      x: -model.material.conductivity * gradient.x,
-      y: -model.material.conductivity * gradient.y,
-      magnitude: model.material.conductivity * gradient.magnitude,
-    })),
+    flux: solution.gradient.map((gradient, index) => {
+      const centroid = triangleCentroid(solution.mesh, solution.mesh.triangles[index]!)
+      const conductivity = conductivityAt(model, centroid.x, centroid.y)
+      return { x: -conductivity * gradient.x, y: -conductivity * gradient.y, magnitude: conductivity * gradient.magnitude }
+    }),
     converged: solution.converged,
     iterations: solution.iterations,
     relativeResidual: solution.relativeResidual,
@@ -83,26 +93,29 @@ function solveTransientHeat(model: HeatModel): SimulationResult {
     }
   }
   if (!final) throw new Error('The transient study did not execute a time step.')
-  return { ...final, converged, iterations, relativeResidual, solveTimeMs, transient: { frames, timeSteps: settings.timeSteps, conductivity: model.material.conductivity } }
+  const conductivities = mesh.triangles.map((triangle) => {
+    const centroid = triangleCentroid(mesh, triangle)
+    return conductivityAt(model, centroid.x, centroid.y)
+  })
+  return { ...final, converged, iterations, relativeResidual, solveTimeMs, transient: { frames, timeSteps: settings.timeSteps, conductivity: model.material.conductivity, conductivities } }
 }
 
-export function solveHeat(model: HeatModel): SimulationResult {
-  return model.study.type === 'transient' ? solveTransientHeat(model) : thermalResult(model, solveScalar(heatProblem(model), createModelMesh(model)))
+export function solveHeat(model: HeatModel, existingMesh?: Mesh): SimulationResult {
+  if (existingMesh && model.study.type === 'transient') throw new Error('A fixed external mesh is only supported for stationary heat studies.')
+  return model.study.type === 'transient' ? solveTransientHeat(model) : thermalResult(model, solveScalar(heatProblem(model), existingMesh ?? createModelMesh(model)))
 }
 
 /** Returns an independent frame without discarding the transient dataset. */
 export function heatResultAtTime(result: SimulationResult, frameIndex: number): SimulationResult {
   if (!result.transient) return result
   const selected = result.transient.frames[Math.max(0, Math.min(frameIndex, result.transient.frames.length - 1))]!
-  const conductivity = result.transient.conductivity
   return {
     ...result,
     temperature: [...selected.temperature],
-    flux: scalarGradient(result.mesh, selected.temperature).map((gradient) => ({
-      x: -conductivity * gradient.x,
-      y: -conductivity * gradient.y,
-      magnitude: conductivity * gradient.magnitude,
-    })),
+    flux: scalarGradient(result.mesh, selected.temperature).map((gradient, index) => {
+      const conductivity = result.transient!.conductivities?.[index] ?? result.transient!.conductivity
+      return { x: -conductivity * gradient.x, y: -conductivity * gradient.y, magnitude: conductivity * gradient.magnitude }
+    }),
     minimum: selected.minimum,
     maximum: selected.maximum,
     average: selected.average,

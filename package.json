@@ -1,13 +1,21 @@
 {
   "name": "openphysics-studio",
   "private": true,
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Clean-room open-source multiphysics workbench prototype",
   "license": "MIT",
   "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist-lib/openphysics.d.ts",
+      "import": "./dist-lib/openphysics.js"
+    }
+  },
+  "files": ["dist-lib"],
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:lib": "vite build --config vite.lib.config.ts && tsc -p tsconfig.lib.json",
     "lint": "eslint .",
     "test": "vitest run",
     "test:ui": "node scripts/validate-ui.mjs",

@@ -1,6 +1,6 @@
 # OpenPhysics Studio
 
-OpenPhysics Studio is a clean-room, open-source multiphysics workbench. It runs locally in the browser and provides a verifiable finite-element workflow from parametric geometry to open scientific data. It does not contain COMSOL code, assets, file formats, or branding.
+OpenPhysics Studio is a clean-room, open-source multiphysics workbench. It runs locally in the browser and provides a verifiable finite-element workflow from geometry to open scientific data. It contains no COMSOL code, assets, proprietary file formats, or branding.
 
 **Current scope:** an educational and research prototype, not a full COMSOL replacement or a certified engineering tool. See the [functional comparison and explicit gap matrix](docs/comsol-comparison.md).
 
@@ -8,63 +8,63 @@ OpenPhysics Studio is a clean-room, open-source multiphysics workbench. It runs 
 
 ### Heat Transfer in Solids
 
-- Stationary and transient 2D conduction with constant isotropic properties
-- Density, heat capacity, thermal conductivity and uniform volumetric generation
-- Fixed-temperature and insulated boundaries
-- First-order implicit Euler with consistent P1 mass matrices
-- Selectable time frames, temperature and heat-flux visualization
+- Stationary and transient 2D conduction with isotropic conductivity `k(x,y) = k₀ + gx x + gy y`.
+- Density, heat capacity and uniform volumetric generation.
+- Fixed-temperature and insulated named boundaries, plus overrides on arbitrary geometric edges.
+- First-order implicit Euler, consistent P1 mass matrices and selectable time frames.
+- Temperature, heat-flux and vector visualization.
 
 ### Electrostatics
 
-- Stationary 2D electric potential with relative permittivity
-- Uniform space-charge density
-- Fixed-potential and zero-charge/symmetry boundaries
-- Electric potential and electric-field visualization
+- Stationary 2D potential with spatially linear relative permittivity.
+- Uniform space-charge density, fixed potential and zero-charge/symmetry conditions.
+- Named and arbitrary-edge conditions; potential, field magnitude and vector output.
 
 ### Linear Elasticity
 
-- Small-strain isotropic plane stress and plane strain
-- Young’s modulus, Poisson’s ratio and uniform body forces
-- Free, fixed, roller and prescribed normal-displacement boundaries
-- Two displacement DOF per node with P1 triangular elements
-- Automatically scaled deformed shape and displacement magnitude
-- Elementwise strain, stress and 2D/3D-aware von Mises stress
-- Independent analytical patch benchmarks for displacement and stress
+- Small-strain isotropic plane stress and plane strain with spatially linear Young’s modulus.
+- Body forces, free/fixed/roller/normal-displacement boundaries and consistent nonzero P1 edge tractions.
+- Optional one-way stationary thermal–structural coupling using `εth = α(T − Tref)`.
+- Two displacement DOF per node, scaled deformed shape, element strain/stress and von Mises output.
+- Analytical traction and stress-free thermal-expansion benchmarks.
 
-### Geometry and unstructured meshing
+### Custom scalar PDE
 
-- Parametric rectangles or one simple 2D polygon, including concave boundaries
-- CSV coordinate import (`x,y` rows) and SVG polygon/polyline/linear-path import
-- SVG paths support M/L/H/V/Z; curves, holes and multiple subpaths must be preprocessed externally
-- Coordinate normalization to a `(0,0)` minimum and conversion of SVG screen-down Y to Cartesian Y
-- Boundary validation for finite coordinates, self-intersections, duplicate/collinear vertices and dimensions
-- Earcut triangulation with nested one-to-four red refinement (R0–R4 in the interface)
-- Coarse node indices preserved during refinement for direct successive-mesh comparisons
-- Polygon area, bounding-box dimensions, geometry/mesh views and an L-shaped electrostatic preset
+```text
+−∇ · (c∇u) + a u = f
+```
+
+- Positive constant diffusion, nonnegative reaction and constant source.
+- Dirichlet and Neumann conditions on named or arbitrary geometric edges.
+- Nodal field and element-gradient visualization and export.
+- Available from the workbench and the public TypeScript API.
+
+### Geometry and meshing
+
+- Parametric rectangles or one simple 2D polygon, including concave boundaries.
+- CSV coordinates and SVG polygon/polyline/linear-path import; M/L/H/V/Z commands.
+- Geometry validation, Earcut triangulation and nested uniform red refinement.
+- Error-guided local refinement for stationary scalar physics: area-weighted gradient recovery, largest-indicator marking and conforming longest-edge bisection without hanging nodes.
+- Coarse node indices preserved during refinement.
 
 ### Automated studies and postprocessing
 
-- Parametric sweeps of width, height, conductivity, permittivity, Young’s modulus, heat source and charge density
-- Between 2 and 12 independently validated cases per sweep; bounding-box sweeps are rectangle-only
-- Sweep table, average-value plot and selectable result fields
-- Automatic ×2 element-size refinement sequences with 2–4 levels on mapped and unstructured meshes
-- Normalized L2 differences between successive grids and observed order
-- Explicit detection of the solver/round-off floor
-- Exact P1 domain integration for primary scalar fields, area-weighted averages and extrema locations
-- Area-centroid probe and open CSV exports for derived values and sweep tables
-- Standalone local HTML simulation reports
+- Parametric sweeps of geometry, material and source parameters supported by each existing physics interface.
+- Automatic ×2 mesh-convergence sequences with normalized successive-grid L2 differences and observed order.
+- Optional exact nodal RMS/max error against scalar-sine and logarithmic-heat manufactured solutions.
+- Adaptive reports with nodes, elements, marked fraction, recovery indicator and optional exact error.
+- Exact P1 integration of primary scalar fields, extrema, area-centroid probes and derived CSV.
+- CSV, legacy VTK, versioned JSON and standalone HTML reports.
 
-### Shared numerical workflow
+## Solvers and execution
 
-- Rectangular and simple-polygon 2D geometry with linear (P1) triangular finite elements
-- Mapped or unstructured meshes shared by heat, electrostatics and linear elasticity
-- Sparse assembly with selectable Jacobi-preconditioned conjugate gradients or sparse LDLᵀ direct factorization for SPD systems
-- Warm starts for iterative transient time steps
-- Explicit convergence and true relative-residual reporting for both solver families
-- Computation, mesh convergence and parametric sweeps in a persistent Web Worker; model edits logically invalidate stale responses
-- Versioned JSON projects (schema v6) with additive migration from schemas v1–v5
-- Stable model signatures independent of object-key insertion order
-- CSV, legacy VTK, JSON and HTML output; structural VTK includes displacement vectors and elementwise von Mises stress
+- Sparse assembly with conjugate gradients and Jacobi or zero-fill incomplete-Cholesky IC(0) preconditioning.
+- Natural or reverse Cuthill–McKee ordering for iterative and direct solves.
+- Sparse LDLᵀ factorization without pivoting for symmetric positive-definite systems.
+- True relative residuals and convergence state; warm starts for transient steps.
+- A synchronous WebAssembly dot-product kernel with JavaScript fallback. It is only a kernel, not a full WASM solver; no speedup is claimed without a workload-specific benchmark.
+- Compute, convergence, adaptation and sweeps run sequentially in one persistent Web Worker. Edits logically invalidate stale responses but do not immediately cancel an active calculation.
+- Schema v7 projects with additive migration from v1–v6 and stable model signatures.
 
 All models and results stay on the local machine. No backend is required.
 
@@ -79,113 +79,93 @@ npm run dev -- --port 7100
 
 Open `http://localhost:7100`.
 
+## Public TypeScript API
+
+The numerical core has no React dependency. Build the ES module and declarations with:
+
+```bash
+npm run build:lib
+```
+
+The package entry point is `src/lib/openphysics.ts`; generated artifacts are written to `dist-lib/`.
+
+```ts
+import {
+  defaultModel,
+  rectangleGeometry,
+  runAdaptiveStudy,
+  runConvergenceStudy,
+  solveModel,
+  toCsv,
+} from 'openphysics-studio'
+
+const model = structuredClone(defaultModel)
+model.activePhysics = 'custom'
+model.geometry = rectangleGeometry(1, 1)
+model.custom = {
+  ...model.custom,
+  diffusion: 2,
+  reaction: 0.5,
+}
+model.study.manufacturedSolution = 'scalarSine'
+
+const result = solveModel(model)
+const convergence = runConvergenceStudy(model)
+const adaptive = runAdaptiveStudy({ ...model, adaptive: { levels: 3, markFraction: 0.3 } })
+console.log(result.minimum, result.maximum, convergence.entries, adaptive.entries)
+console.log(toCsv(result))
+```
+
+`solveModel` also accepts an `.opmodel.json` string and validates the complete schema before solving. The API is public but still pre-1.0: breaking changes may occur between minor versions.
+
 ## Verify
 
 ```bash
 npm test
 npm run lint
 npm run build
+npm run build:lib
 npm run test:ui
 ```
 
-The UI check starts a temporary local server on port 7101 and drives Chrome or Edge through both linear solvers, Web Worker execution, stale-response invalidation, stationary thermal, transient thermal, electrostatic, linear-elastic, polygon-import, unstructured-mesh, convergence and parametric-sweep workflows. It checks SVG import, polygon refinement, time-frame selection, case selection, von Mises visualization and CSV/VTK/HTML downloads, saves screenshots outside the repository, and stops the server. Set `CHROME_PATH` if the browser is not installed in a standard Windows location or `UI_TEST_PORT` to use a different validation port.
+The UI check starts a temporary server on port 7101, drives Chrome or Edge through both solver families, Web Worker execution, stale-response invalidation, thermal/transient/electrostatic/structural/custom workflows, manufactured convergence, adaptation, IC(0), polygon import, sweeps and downloads. It saves screenshots outside the repository and stops the server. Set `CHROME_PATH` or `UI_TEST_PORT` when needed.
 
 See [verification models, analytical benchmarks and tolerances](docs/verification.md) for the exact verification contract.
 
-## Numerical models
+## Convergence and adaptation semantics
 
-The stationary scalar finite-element kernel solves
+Successive-grid L2 differences are **not** exact-solution errors. When a manufactured reference is selected, the report separately computes nodal RMS (`exactL2`) and maximum absolute error (`exactMaximum`). The scalar-sine case imposes zero Dirichlet boundaries and manufactures the corresponding source. The logarithmic case requires stationary heat, zero source, zero conductivity gradient in Y and insulated top/bottom boundaries.
 
-```text
-∇ · (−c∇u) = Q
-```
+The adaptive recovery indicator guides refinement but is **not a guaranteed error bound**. Local adaptation currently supports stationary heat, electrostatics and custom scalar physics; elasticity and transient studies use uniform convergence sequences. Studies do not modify the base mesh stored in the project.
 
-with Dirichlet elimination and a natural zero-normal-flux condition.
+## Important limits
 
-For heat transfer, `u = T`, `c = k`, and `Q` is volumetric heat generation:
-
-```text
-∇ · (−k∇T) = Q
-q = −k∇T
-```
-
-For transient heat transfer, with constant density ρ and heat capacity Cp:
-
-```text
-ρCp ∂T/∂t + ∇ · (−k∇T) = Q
-(M/Δt + K)Tⁿ⁺¹ = (M/Δt)Tⁿ + F
-```
-
-The implementation uses implicit Euler (first order), fixed time steps and a consistent P1 mass matrix. The initial frame stores the uniform initial condition; Dirichlet values are imposed by the first solved step.
-
-For electrostatics, `u = V`, `c = εᵣε₀`, and `Q = ρ`:
-
-```text
-∇ · (−ε∇V) = ρ
-E = −∇V
-```
-
-For linear elasticity, the vector kernel assembles two displacement components per node:
-
-```text
-∇ · σ + b = 0
-ε = (∇u + ∇uᵀ) / 2
-σ = D : ε
-Kₑ = Aₑ Bᵀ D B
-```
-
-Plane stress and plane strain use their respective isotropic constitutive matrices. Structural stress and strain are elementwise quantities; von Mises includes `σzz` for plane strain. The deformed shape is scaled automatically for display only.
-
-These are 2D per-unit-depth models. Coefficients and source density are constant within the single domain.
-
-## Derived values and convergence semantics
-
-For each triangular element, primary scalar fields are integrated exactly using their area and the mean of their three nodal values. Domain averages are `∫u dA / ∫dA`; they are distinct from the field average displayed in the solver metrics. Extrema include coordinates, and the area-centroid probe uses P1 barycentric interpolation. Structural derived values interpolate the nodal displacement magnitude; this is not exact integration of the nonlinear magnitude inside each element.
-
-A mesh-convergence study starts from the current base mesh and halves the maximum element size at every level. Rectangles double `nx` and `ny`; polygons use nested red refinement and preserve coarse node indices. For each pair of successive grids, the finer solution is sampled at the coarse nodes and compared using
-
-```text
-‖u_fine − u_coarse‖₂ / ‖u_fine‖₂
-```
-
-The observed order is estimated from three consecutive grid levels. These are **successive-grid self-convergence metrics**, not errors against an exact solution. Differences at or below `10 × solver relative tolerance` are marked as the solver/round-off floor, and no observed order is reported there.
-
-For a transient model, mesh convergence and sweep tables use the final time frame. The finest rectangular grid is limited to 128 divisions per direction. Polygon studies are limited to R5 and 100,000 triangles; the interactive base-mesh control provides R0–R4. Studies do not modify the base mesh stored in the project.
-
-Named left/right/top/bottom conditions apply at bounding-box extrema. All other polygon edges retain their natural condition. This is intentionally narrower than arbitrary edge selection or per-edge boundary assignment.
+- One 2D domain per model, one isotropic material, P1 triangles and per-unit-depth physics.
+- Spatial material variation is linear; field-dependent properties, anisotropy and nonlinear materials are absent.
+- No holes, multiple subpaths, curves, CAD, Boolean geometry, axisymmetry or 3D.
+- Thermal coupling is one-way and stationary; no strongly coupled block solve or multiphysics iteration.
+- Custom PDE coefficients/source are constant except for the built-in manufactured-sine source; there is no expression parser or plug-in SDK.
+- No higher-order elements, nonlinear/contact/dynamic mechanics, CFD, acoustics, eigenvalue or frequency-domain studies.
+- IC(0) and RCM do not make the solver generally scalable or suitable for indefinite/nonsymmetric systems. LDLᵀ uses no pivoting.
+- No multicore parallelism, cluster/GPU backend or immediate cancellation.
 
 ## Architecture
 
 ```text
-src/lib/fem/geometry.ts       Polygon validation and SVG/CSV import
-src/lib/fem/mesh.ts           Mapped, Earcut and red-refined triangular meshes
-src/lib/fem/scalar.ts         Shared PDE/mass assembly and gradient recovery
-src/lib/fem/solver.ts         Jacobi-preconditioned CG and sparse direct LDLᵀ
-src/lib/fem/heat.ts           Stationary/transient thermal interfaces
-src/lib/fem/electrostatics.ts Electrostatic interface
-src/lib/fem/elasticity.ts     2D vector elasticity and stress recovery
-src/lib/fem/convergence.ts    Automated successive-grid studies
-src/lib/fem/sweep.ts          Independent parametric cases
-src/lib/fem/derived.ts        P1 integration, extrema and point evaluation
-src/lib/fem/project.ts        Schema v6, v1–v5 migration and signatures
-src/lib/fem/jobClient.ts      Typed persistent Worker requests and responses
-src/workers/study.worker.ts   Background compute, convergence and sweep jobs
-src/lib/fem/exporters.ts      CSV, VTK and standalone HTML reports
+src/lib/fem/scalar.ts          Shared scalar assembly and gradients
+src/lib/fem/elasticity.ts      Vector elasticity, traction and thermal strain
+src/lib/fem/custom.ts          Custom diffusion–reaction interface
+src/lib/fem/adaptive.ts        Recovery indicator and conforming local refinement
+src/lib/fem/manufactured.ts    Exact references and error metrics
+src/lib/fem/solver.ts          CG, sparse LDLᵀ and ordering integration
+src/lib/fem/preconditioner.ts  Jacobi and IC(0)
+src/lib/fem/ordering.ts        Reverse Cuthill–McKee
+src/lib/fem/wasm.ts            Synchronous WASM dot product with JS fallback
+src/lib/fem/project.ts         Schema v7 and v1–v6 migration
+src/lib/openphysics.ts         Public numerical API
+src/workers/study.worker.ts    Background compute and study jobs
 src/components/               Model tree, settings, plots and viewport
-src/App.tsx                   Workflow orchestration and stale-job invalidation
 ```
-
-The numerical core has no React dependency. Background jobs run sequentially in one Worker; they are not multicore-parallel and editing a model does not immediately terminate a running calculation. A future native or WASM solver can implement the same model/result boundary without changing the model-builder interface. The direct LDLᵀ kernel is limited to SPD systems, uses no pivoting or fill-reducing ordering, and can still be expensive for large meshes.
-
-## Roadmap
-
-1. One-way thermal–structural coupling and nonzero traction boundaries
-2. General spatially varying coefficients and arbitrary boundary selections
-3. Error-guided adaptive refinement and broader manufactured-solution verification
-4. WASM kernels, solver ordering and scalable preconditioners
-5. Community physics plug-ins and fully coupled studies
-
-A full COMSOL replacement is a long-term community program, not a claim made by this prototype.
 
 ## License
 

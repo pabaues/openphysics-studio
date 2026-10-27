@@ -1,3 +1,4 @@
+import { manufacturedError, validateManufacturedModel } from './manufactured'
 import { maximumElementSize } from './mesh'
 import { resultValues, solveActiveModel } from './study'
 import type { AnySimulationResult, ConvergenceEntry, ConvergenceReport, HeatModel } from './types'
@@ -32,6 +33,7 @@ function compareGrids(coarse: AnySimulationResult, fine: AnySimulationResult) {
 /** Successive-grid self-convergence for mapped and nested unstructured meshes. */
 export function runConvergenceStudy(model: HeatModel): ConvergenceReport {
   const started = performance.now()
+  validateManufacturedModel(model)
   const levels = model.convergence.levels
   if (model.geometry.shape === 'rectangle') {
     const refinement = 2 ** (levels - 1)
@@ -67,6 +69,7 @@ export function runConvergenceStudy(model: HeatModel): ConvergenceReport {
       iterations: current.iterations,
       solveTimeMs: current.solveTimeMs,
       converged: current.converged,
+      ...manufacturedError(model, current),
     }
     if (previous) {
       const comparison = compareGrids(previous, current)

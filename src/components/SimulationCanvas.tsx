@@ -4,7 +4,7 @@ import { resultValues } from '@/lib/fem/study'
 import type { AnySimulationResult, HeatModel } from '@/lib/fem/types'
 
 export type ViewMode = 'geometry' | 'mesh' | 'results'
-export type ResultQuantity = 'temperature' | 'flux' | 'potential' | 'electricField' | 'displacement' | 'vonMises'
+export type ResultQuantity = 'temperature' | 'flux' | 'potential' | 'electricField' | 'displacement' | 'vonMises' | 'custom' | 'customGradient'
 
 interface SimulationCanvasProps {
   model: HeatModel
@@ -51,20 +51,23 @@ export function SimulationCanvas({ model, result, view, quantity, showMesh, stal
     const displacement = structural.displacement[index]!
     return { x: node.x + deformationScale * displacement.x, y: node.y + deformationScale * displacement.y }
   }
-  const nodal = quantity === 'temperature' || quantity === 'potential' || quantity === 'displacement'
+  const nodal = quantity === 'temperature' || quantity === 'potential' || quantity === 'displacement' || quantity === 'custom'
   const values = !result ? undefined : nodal ? resultValues(result)
     : result.physics === 'heat' ? result.flux.map((item) => item.magnitude)
       : result.physics === 'electrostatics' ? result.electricField.map((item) => item.magnitude)
-        : result.vonMises
-  const vectors = !result ? [] : result.physics === 'heat' ? result.flux : result.physics === 'electrostatics' ? result.electricField : []
+        : result.physics === 'custom' ? result.gradient.map((item) => item.magnitude)
+          : result.vonMises
+  const vectors = !result ? [] : result.physics === 'heat' ? result.flux : result.physics === 'electrostatics' ? result.electricField : result.physics === 'custom' ? result.gradient : []
   const min = values ? Math.min(...values) : 0
   const max = values ? Math.max(...values) : 1
   const unit = result?.physics === 'electrostatics' ? nodal ? 'V' : 'V/m'
     : result?.physics === 'elasticity' ? nodal ? 'm' : 'Pa'
-      : nodal ? '°C' : 'W/m²'
+      : result?.physics === 'custom' ? nodal ? 'u' : '|∇u|'
+        : nodal ? '°C' : 'W/m²'
   const fieldName = result?.physics === 'electrostatics' ? nodal ? 'Electric potential' : 'Electric field magnitude'
     : result?.physics === 'elasticity' ? nodal ? 'Displacement magnitude' : 'von Mises stress'
-      : nodal ? 'Temperature field' : 'Heat flux magnitude'
+      : result?.physics === 'custom' ? nodal ? 'Custom scalar field' : 'Gradient magnitude'
+        : nodal ? 'Temperature field' : 'Heat flux magnitude'
 
   return <div className="canvas-wrap">
     <svg className="simulation-canvas" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-label={`${view} visualization`}>

@@ -16,8 +16,8 @@ export function ConvergencePanel({ report, onClose }: { report: ConvergenceRepor
   return <section className="convergence-panel" aria-label="Mesh convergence results">
     <div className="convergence-table-wrap">
       <div className="convergence-heading"><TrendingUp size={15} /><div><strong>Mesh convergence</strong><span>Successive-grid normalized L2 difference</span></div><button onClick={onClose} title="Close convergence results"><X size={14} /></button></div>
-      <table className="convergence-table"><thead><tr><th>Grid</th><th>h (m)</th><th>Nodes</th><th>L2 difference</th><th>Order</th></tr></thead><tbody>
-        {report.entries.map((entry) => <tr key={entry.level}><td>{entry.grid}</td><td>{entry.elementSize.toExponential(2)}</td><td>{entry.nodes.toLocaleString()}</td><td>{entry.relativeL2 === undefined ? '—' : `${entry.relativeL2.toExponential(3)}${entry.nearSolverFloor ? ' †' : ''}`}</td><td>{entry.observedOrder?.toFixed(2) ?? '—'}</td></tr>)}
+      <table className="convergence-table"><thead><tr><th>Grid</th><th>h (m)</th><th>Nodes</th><th>L2 difference</th><th>Exact L2</th><th>Order</th></tr></thead><tbody>
+        {report.entries.map((entry) => <tr key={entry.level}><td>{entry.grid}</td><td>{entry.elementSize.toExponential(2)}</td><td>{entry.nodes.toLocaleString()}</td><td>{entry.relativeL2 === undefined ? '—' : `${entry.relativeL2.toExponential(3)}${entry.nearSolverFloor ? ' †' : ''}`}</td><td>{entry.exactL2?.toExponential(3) ?? '—'}</td><td>{entry.observedOrder?.toFixed(2) ?? '—'}</td></tr>)}
       </tbody></table>
       <div className="convergence-note">Observed order requires 3 levels above the solver floor. † Round-off floor: order is not interpreted. Differences are not exact-solution errors.</div>
     </div>

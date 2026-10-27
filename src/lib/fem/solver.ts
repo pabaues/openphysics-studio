@@ -1,3 +1,13 @@
+import { reverseCuthillMcKee } from './ordering'
+import { ic0Preconditioner, jacobiPreconditioner } from './preconditioner'
+import { dotProduct } from './wasm'
+import type { PreconditionerKind, SolverOrdering } from './types'
+
+export interface SolverOptions {
+  preconditioner?: PreconditionerKind
+  ordering?: SolverOrdering
+}
+
 export interface SparseRow {
   indices: number[]
   values: number[]
@@ -9,12 +19,6 @@ export interface IterativeSolution {
   converged: boolean
   iterations: number
   relativeResidual: number
-}
-
-function dot(a: number[], b: number[]): number {
-  let result = 0
-  for (let i = 0; i < a.length; i += 1) result += a[i]! * b[i]!
-  return result
 }
 
 function multiply(rows: SparseRow[], x: number[]): number[] {
@@ -34,60 +38,43 @@ export function solveConjugateGradient(
   tolerance: number,
   maxIterations: number,
   initial?: number[],
+  preconditionerKind: PreconditionerKind = 'jacobi',
 ): IterativeSolution {
   const size = rhs.length
-  if (size === 0) {
-    return { values: [], converged: true, iterations: 0, relativeResidual: 0 }
-  }
+  if (size === 0) return { values: [], converged: true, iterations: 0, relativeResidual: 0 }
   if (initial && initial.length !== size) throw new Error('Initial guess size does not match the linear system.')
-
+  const preconditioner = preconditionerKind === 'ic0' ? ic0Preconditioner(rows) : jacobiPreconditioner(rows)
   const x = initial ? [...initial] : Array<number>(size).fill(0)
   const ax = multiply(rows, x)
   const r = rhs.map((value, i) => value - ax[i]!)
-  const rhsNorm = Math.sqrt(dot(rhs, rhs))
-  let residualNorm = Math.sqrt(dot(r, r))
+  const rhsNorm = Math.sqrt(dotProduct(rhs, rhs))
+  let residualNorm = Math.sqrt(dotProduct(r, r))
   let relativeResidual = rhsNorm > 0 ? residualNorm / rhsNorm : residualNorm
-  if (relativeResidual <= tolerance) {
-    return { values: x, converged: true, iterations: 0, relativeResidual }
-  }
+  if (relativeResidual <= tolerance) return { values: x, converged: true, iterations: 0, relativeResidual }
 
-  const z = r.map((value, i) => {
-    const diagonal = rows[i]!.diagonal
-    if (!(diagonal > 0)) throw new Error('The system is not positive definite.')
-    return value / diagonal
-  })
+  let z = preconditioner.apply(r)
   const p = [...z]
-  let rz = dot(r, z)
+  let rz = dotProduct(r, z)
   let converged = false
   let iteration = 0
-
   for (; iteration < maxIterations; iteration += 1) {
     const ap = multiply(rows, p)
-    const denominator = dot(p, ap)
-    if (!(denominator > 0) || !Number.isFinite(denominator)) {
-      throw new Error('The linear system lost positive definiteness.')
-    }
+    const denominator = dotProduct(p, ap)
+    if (!(denominator > 0) || !Number.isFinite(denominator)) throw new Error('The linear system lost positive definiteness.')
     const alpha = rz / denominator
     for (let i = 0; i < size; i += 1) {
       x[i]! += alpha * p[i]!
       r[i]! -= alpha * ap[i]!
     }
-    residualNorm = Math.sqrt(dot(r, r))
+    residualNorm = Math.sqrt(dotProduct(r, r))
     relativeResidual = rhsNorm > 0 ? residualNorm / rhsNorm : residualNorm
-    if (relativeResidual <= tolerance) {
-      converged = true
-      iteration += 1
-      break
-    }
-    for (let i = 0; i < size; i += 1) {
-      z[i] = r[i]! / rows[i]!.diagonal
-    }
-    const nextRz = dot(r, z)
+    if (relativeResidual <= tolerance) { converged = true; iteration += 1; break }
+    z = preconditioner.apply(r)
+    const nextRz = dotProduct(r, z)
     const beta = nextRz / rz
     for (let i = 0; i < size; i += 1) p[i] = z[i]! + beta * p[i]!
     rz = nextRz
   }
-
   return { values: x, converged, iterations: iteration, relativeResidual }
 }
 
@@ -157,8 +144,8 @@ export function solveDirect(rows: SparseRow[], rhs: number[], tolerance: number)
 
   const ax = multiply(rows, values)
   const residual = rhs.map((value, index) => value - ax[index]!)
-  const rhsNorm = Math.sqrt(dot(rhs, rhs))
-  const residualNorm = Math.sqrt(dot(residual, residual))
+  const rhsNorm = Math.sqrt(dotProduct(rhs, rhs))
+  const residualNorm = Math.sqrt(dotProduct(residual, residual))
   const relativeResidual = rhsNorm > 0 ? residualNorm / rhsNorm : residualNorm
   return {
     values, converged: Number.isFinite(relativeResidual) && relativeResidual <= Math.max(1e-12, tolerance * 10),
@@ -173,8 +160,24 @@ export function solveLinearSystem(
   tolerance: number,
   maxIterations: number,
   initial?: number[],
+  options: SolverOptions = {},
 ): IterativeSolution {
+  if (options.ordering === 'rcm' && rhs.length > 2) {
+    const order = reverseCuthillMcKee(rows)
+    const position = Array<number>(rows.length)
+    order.forEach((oldIndex, newIndex) => { position[oldIndex] = newIndex })
+    const reordered = order.map((oldIndex) => {
+      const row = rows[oldIndex]!
+      const entries = row.indices.map((column, index) => ({ column: position[column]!, value: row.values[index]! })).sort((a, b) => a.column - b.column)
+      return { indices: entries.map((entry) => entry.column), values: entries.map((entry) => entry.value), diagonal: row.diagonal }
+    })
+    const reorderedInitial = initial ? order.map((oldIndex) => initial[oldIndex]!) : undefined
+    const solution = solveLinearSystem(reordered, order.map((oldIndex) => rhs[oldIndex]!), solver, tolerance, maxIterations, reorderedInitial, { ...options, ordering: 'natural' })
+    const values = Array<number>(rows.length)
+    order.forEach((oldIndex, newIndex) => { values[oldIndex] = solution.values[newIndex]! })
+    return { ...solution, values }
+  }
   return solver === 'direct'
     ? solveDirect(rows, rhs, tolerance)
-    : solveConjugateGradient(rows, rhs, tolerance, maxIterations, initial)
+    : solveConjugateGradient(rows, rhs, tolerance, maxIterations, initial, options.preconditioner)
 }

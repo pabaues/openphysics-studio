@@ -5,6 +5,7 @@ import type { AnySimulationResult, HeatModel } from './types'
 function field(result: AnySimulationResult) {
   if (result.physics === 'heat') return { values: result.temperature, name: 'temperature_C', title: 'temperature field', unit: '°C' }
   if (result.physics === 'electrostatics') return { values: result.potential, name: 'potential_V', title: 'electric potential field', unit: 'V' }
+  if (result.physics === 'custom') return { values: result.values, name: 'scalar_u', title: 'custom scalar field', unit: 'u' }
   return { values: result.displacement.map((value) => value.magnitude), name: 'displacement_m', title: 'displacement magnitude field', unit: 'm' }
 }
 

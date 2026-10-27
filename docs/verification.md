@@ -2,84 +2,90 @@
 
 OpenPhysics Studio es un prototipo de investigación y enseñanza. Estas pruebas verifican casos concretos; no constituyen certificación industrial ni demuestran paridad con COMSOL.
 
-## Elasticidad lineal 2D
+## Elasticidad, tracción y acoplamiento térmico
 
-El núcleo resuelve elasticidad isotrópica de pequeñas deformaciones con triángulos P1 y dos grados de libertad por nodo:
+El núcleo resuelve elasticidad isotrópica de pequeñas deformaciones con triángulos P1 y dos grados de libertad por nodo. Las condiciones esenciales se imponen por eliminación; las tracciones se integran como cargas consistentes de arista P1. La dilatación térmica opcional evalúa una temperatura media por elemento y aplica `εth = α(T − Tref)` de forma unidireccional y estacionaria.
+
+`src/lib/fem/elasticity.benchmark.test.ts` comprueba cuatro casos independientes:
+
+1. **Tracción uniaxial en tensión plana.** Se verifican `uₓ = ε₀x`, `uᵧ = −νε₀y`, `σxx = Eε₀` y tensiones fuera de plano/corte según la formulación.
+2. **Solución uniaxial en deformación plana.** Incluye `σzz = νσxx` en von Mises.
+3. **Traslación de cuerpo rígido.** Exige deformaciones prácticamente nulas.
+4. **Refinamiento sucesivo.** El campo afín pertenece al espacio P1 y debe alcanzar el suelo del solver.
+
+`src/lib/fem/coupling.test.ts` añade:
+
+- **Tracción de contorno no nula.** Una carga `tx = 1 MPa` reproduce el campo uniaxial analítico, sin imponer el desplazamiento derecho. Se comprueban desplazamientos nodales y tensiones.
+- **Dilatación térmica libre.** Una placa uniforme a `100 °C`, referencia `20 °C` y `α = 12×10⁻⁶ K⁻¹` reproduce `u = αΔT(x,y)` y tensión prácticamente nula. Se usa LDLᵀ para que el umbral de tensión no quede dominado por el residual iterativo amplificado por `E`.
+
+## Coeficientes espaciales y selecciones
+
+`src/lib/fem/spatial.test.ts` verifica:
+
+- Convergencia a `T = log(1 + 2x)/2` con `k = 1 + 2x`, fuente nula y bordes superior/inferior aislados. Los errores máximos deben caer por debajo de un factor `0,35` al duplicar las divisiones.
+- Una condición de `77 °C` sobre una arista vertical interior de un polígono en L, incluidas las esquinas compartidas.
+- Rechazo durante validación de cualquier coeficiente lineal que deje de ser positivo en un vértice.
+
+Las propiedades disponibles son gradientes lineales de conductividad, permitividad relativa y módulo de Young. No hay dependencia de campo, anisotropía ni expresiones generales.
+
+## Soluciones manufacturadas y convergencia
+
+`src/lib/fem/advanced.test.ts` usa la solución
 
 ```text
-∇ · σ + b = 0
-ε = (∇u + ∇uᵀ) / 2
-σ = D : ε
-Kₑ = Aₑ Bᵀ D B
+u = sin(πx/Lx) sin(πy/Ly)
 ```
 
-Se ensambla un sistema disperso simétrico definido positivo cuando las condiciones de contorno eliminan los modos de cuerpo rígido. Las condiciones esenciales se aplican por eliminación. El usuario puede seleccionar gradientes conjugados precondicionados por Jacobi o factorización directa LDLᵀ dispersa sin pivotaje para sistemas SPD. El residuo relativo mostrado se recalcula sobre el sistema algebraico original; no es una cota del error físico.
+para `−∇·(c∇u) + au = f`, con contorno Dirichlet nulo y fuente fabricada `f = c(π²/Lx² + π²/Ly²)u + au`. En tres mallas sucesivas, el error RMS nodal debe disminuir por debajo de un factor `0,35` por nivel, coherente con convergencia de segundo orden lejos del suelo del solver.
 
-Están disponibles tensión plana y deformación plana. En deformación plana, la tensión de von Mises incluye `σzz = ν(σxx + σyy)`; en tensión plana, `σzz = 0`. Las deformaciones y tensiones son constantes por elemento. La deformada del visor usa una escala automática exclusivamente gráfica y no modifica los resultados.
+Los informes separan:
 
-### Casos analíticos independientes
+- `relativeL2`: diferencia normalizada entre soluciones de mallas sucesivas.
+- `exactL2`: RMS del error nodal frente a la referencia seleccionada.
+- `exactMaximum`: máximo error absoluto nodal.
+- `observedOrder`: estimación a partir de diferencias entre mallas, solo por encima de `10 × tolerancia del solver`.
 
-Los tests están en `src/lib/fem/elasticity.benchmark.test.ts` y no comparan OpenPhysics consigo mismo ni con resultados generados por otro solver.
+Ninguna diferencia entre mallas se presenta como error exacto cuando no hay referencia manufacturada.
 
-1. **Tracción uniaxial en tensión plana.** Rectángulo de `0,2 × 0,1 m`, `E = 70 GPa`, `ν = 0,25`, desplazamiento normal derecho `uₓ = 20 μm`, rodillo izquierdo e inferior y borde superior libre. Con `ε₀ = 10⁻⁴`, se comprueba en todos los nodos:
+## Adaptación guiada por error
 
-   ```text
-   uₓ = ε₀ x
-   uᵧ = −ν ε₀ y
-   σxx = E ε₀
-   σyy = σxy = 0
-   ```
+El estimador recupera un gradiente nodal mediante promedio por área y asigna a cada triángulo un indicador basado en la diferencia entre gradiente elemental y gradientes recuperados. Se marca la fracción seleccionada de indicadores mayores.
 
-   El desplazamiento debe coincidir con error absoluto menor que `10⁻¹¹ m`; las tensiones, con error relativo menor que `10⁻⁸`.
+La bisección de arista larga comparte los puntos medios y propaga el refinamiento a triángulos vecinos hasta cerrar la conformidad. Las pruebas comprueban:
 
-2. **Solución uniaxial en deformación plana.** Las mismas condiciones exigen:
+- Conservación de índices y coordenadas de nodos groseros.
+- Aristas con una o dos incidencias, sin nodos colgantes, y conservación del número de aristas externas en el caso de referencia.
+- Indicador nulo para un campo afín.
+- Disminución del error exacto y aumento de nodos en un estudio adaptativo sinusoidal.
 
-   ```text
-   uₓ = ε₀ x
-   uᵧ = −ν/(1 − ν) ε₀ y
-   σxx = E ε₀/(1 − ν²)
-   σyy = 0
-   σzz = ν σxx
-   ```
+El indicador guía el refinamiento, pero no es una cota garantizada del error. La adaptación local se limita a física escalar estacionaria.
 
-   Se aplican los mismos umbrales de desplazamiento y tensión.
+## Solvers y WASM
 
-3. **Traslación de cuerpo rígido.** Una traslación prescrita de `(3, −2) mm` debe reproducirse en todos los nodos. Las deformaciones deben ser menores que `10⁻¹²` y la tensión de von Mises menor que `10⁻³ Pa`.
+Las pruebas de `solver.test.ts`, `direct.integration.test.ts` y `advanced.test.ts` comprueban:
 
-4. **Refinamiento sucesivo.** Tres mallas duplican las divisiones en cada dirección. Como la solución analítica afín pertenece exactamente al espacio P1, la diferencia entre mallas debe alcanzar el suelo declarado del solver. Este caso no pretende medir un orden de convergencia para soluciones generales.
+- Sistemas SPD, relleno de factorización y rechazo de matrices no SPD.
+- Equivalencia de campos entre CG y LDLᵀ en calor, electrostática, elasticidad y transitorios breves.
+- Consistencia de soluciones con orden natural/RCM y precondicionado Jacobi/IC(0).
+- Reconstrucción algebraica del sistema tridiagonal mediante la factorización IC(0).
+- Equivalencia del producto escalar WASM frente a JavaScript en vectores de 128 componentes.
 
-## Geometría poligonal y malla no estructurada
+El módulo WASM se genera de forma reproducible desde `dot.wat`, se instancia síncronamente y tiene fallback JavaScript. Solo acelera potencialmente un kernel; no se afirma una mejora global sin medición específica.
 
-Los tests de `src/lib/fem/geometry.test.ts` comprueban:
+## Geometría, persistencia y navegador
 
-1. Importación y normalización de CSV, SVG polygon y path SVG lineal; el dominio de prueba en L conserva un área exacta de `3 m²`.
-2. Rechazo de auto-intersecciones y de curvas SVG no aplanadas.
-3. Refinamiento rojo 1→4: cuatro triángulos iniciales producen dieciséis, los índices de los nodos groseros se conservan y el tamaño máximo de arista se divide por dos.
-4. Reproducción de campos afines térmicos y eléctricos en una malla no estructurada con tolerancia absoluta de `10⁻⁸`; las condiciones del caso analítico son compatibles con todos los bordes naturales.
-5. Estudio anidado R0→R1→R2 en un polígono cóncavo, sin conversiones a una malla estructurada.
+La suite también comprueba importación/normalización SVG/CSV, rechazo de auto-intersecciones, refinamiento rojo, campos afines en mallas no estructuradas, integración P1, sondas, barridos y exportadores. `project.test.ts` recorre migraciones aditivas v1→v7, incluida v6→v7, firmas estables y validación geométrica.
 
-El ensayo de navegador importa un SVG en L, cambia de R1 a R2, comprueba 64 triángulos, resuelve, descarga VTK y ejecuta tres niveles de convergencia poligonal.
-
-## Otros modelos y regresión
-
-La suite también comprueba conducción estacionaria y transitoria, electrostática, elasticidad, integración y sondas, migraciones de proyectos v1–v5, barridos, exportadores y estudios de convergencia. `solver.test.ts` verifica sistemas SPD, relleno de la factorización y rechazo de matrices no SPD. `direct.integration.test.ts` contrasta LDLᵀ con CG en las tres físicas y en un transitorio implícito breve, comparando campos y residuos. El script de navegador comprueba que los estudios crean un Web Worker, ejecuta cálculo y convergencia con LDLᵀ, verifica que una edición invalida una respuesta obsoleta y recorre presets, cantidades de resultado y descargas CSV, VTK y HTML.
-
-## Semántica de convergencia y valores derivados
-
-La convergencia automática compara mallas sucesivas mediante una diferencia L2 relativa; no sustituye al error frente a una solución exacta. En rectángulos se duplican `nx` y `ny`; en polígonos se aplica refinamiento rojo anidado y se comparan directamente los índices groseros preservados. En ambos casos `h` es la arista máxima de la malla. El orden observado solo se calcula cuando hay tres niveles y las diferencias están por encima del suelo del solver.
-
-Para calor y potencial eléctrico, la integración P1 por elemento es exacta. La sonda se evalúa en el centroide de área del dominio, incluido un polígono cóncavo. Para elasticidad se interpola la magnitud nodal del desplazamiento como un campo P1: su integral no es la integral exacta de `√(uₓ² + uᵧ²)` dentro del elemento. Las tensiones y deformaciones se exportan por elemento, no como campos nodales continuos.
+El ensayo de navegador cubre Worker, invalidación de respuestas obsoletas, ambos solvers, IC(0), RCM/natural, ecuación personalizada, error exacto, adaptación, transitorios, polígonos, elasticidad, barridos y descargas. Las capturas se guardan fuera del repositorio y el servidor temporal se detiene.
 
 ## Límites actuales
 
-- Un único dominio 2D rectangular o poligonal simple, con un material homogéneo y triángulos P1.
-- Sin agujeros, múltiples subpaths, curvas SVG, CAD, booleanas, multi-dominio, axisimetría ni 3D.
-- Las condiciones nombradas izquierda/derecha/superior/inferior se aplican en los extremos del bounding box; las demás aristas poligonales quedan con su condición natural.
-- Los barridos de anchura y altura solo están disponibles para rectángulos; no deforman vértices poligonales.
-- Sin grandes deformaciones, plasticidad, contacto, dinámica estructural, cargas de tracción no nulas ni acoplamiento multifísico.
-- Sin elementos de orden superior ni adaptación automática guiada por error. El refinamiento rojo es uniforme, no adaptativo.
-- El directo LDLᵀ no usa pivotaje ni reordenamiento y solo admite sistemas SPD; no es un solver general no simétrico o indefinido.
-- Los estudios usan un Web Worker, sin paralelismo multinúcleo ni WASM. Editar el modelo invalida lógicamente respuestas antiguas, pero no interrumpe de inmediato el cálculo ya iniciado.
+- Un único dominio 2D, un material isotrópico y triángulos P1.
+- Sin CAD, agujeros, curvas, axisimetría, 3D, elementos de orden superior ni h/p adaptativo.
+- Acoplamiento térmico–estructural solo unidireccional y estacionario.
+- Ecuación personalizada de coeficientes constantes; sin parser de expresiones ni plugins.
+- Sin no linealidad, contacto, dinámica estructural, autovalores, frecuencia, CFD o sistemas algebraicos generales.
+- Un Web Worker secuencial; sin paralelismo multinúcleo ni cancelación inmediata.
 
 Ejecuta toda la verificación con:
 
@@ -87,5 +93,6 @@ Ejecuta toda la verificación con:
 npm test
 npm run lint
 npm run build
+npm run build:lib
 npm run test:ui
 ```

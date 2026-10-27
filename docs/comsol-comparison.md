@@ -1,68 +1,65 @@
-# Comparativa funcional: OpenPhysics Studio 0.6 y COMSOL Multiphysics
+# Comparativa funcional: OpenPhysics Studio 0.7 y COMSOL Multiphysics
 
-Fecha de revisión: 26 de octubre de 2026.
+Fecha de revisión: 27 de octubre de 2026.
 
 ## Alcance y lectura honesta
 
-OpenPhysics Studio es un prototipo comunitario 2D desarrollado mediante ingeniería limpia. **No es un sustituto completo de COMSOL ni afirma paridad funcional o validación equivalente.** La tabla separa lo que está implementado y probado de lo que permanece como brecha. “Parcial” significa que existe un flujo útil pero con un alcance mucho menor; no implica compatibilidad de archivos ni equivalencia numérica certificada.
+OpenPhysics Studio es un prototipo comunitario 2D desarrollado mediante ingeniería limpia. **No es un sustituto completo de COMSOL ni afirma paridad funcional o validación equivalente.** “Parcial” significa que existe un flujo útil pero con un alcance mucho menor; no implica compatibilidad de archivos ni equivalencia numérica certificada.
 
 ## Matriz de diferencias
 
-| Área | COMSOL Multiphysics | OpenPhysics Studio 0.6 | Brecha pendiente |
+| Área | COMSOL Multiphysics | OpenPhysics Studio 0.7 | Brecha pendiente |
 |---|---|---|---|
-| Flujo Model Builder | Geometría, selecciones, materiales, física, malla, estudios y resultados integrados | Árbol integrado con estados obsoletos, presets y validación de esquema | Selecciones generales, variables, funciones, unidades y secuencias de nodos |
-| Dimensión y geometría | 1D, 2D, axisimetría y 3D; operaciones paramétricas y booleanas | Rectángulo paramétrico o un polígono simple 2D, también cóncavo | Primitivas, agujeros, booleanas, axisimetría, 3D y geometrías multi-dominio |
-| CAD e importación | Importación, reparación y simplificación CAD/ECAD mediante productos correspondientes | CSV de coordenadas y SVG polygon/polyline/path lineal; sin CAD | Curvas, STEP, IGES, STL, ECAD, reparación y virtualización |
-| Materiales | Bibliotecas, propiedades variables, anisotropía y no linealidad | Un material homogéneo isotrópico: k, ρ, Cp, εr, E y ν | Biblioteca, mezclas, anisotropía y propiedades dependientes de campo |
-| Transferencia de calor | Múltiples mecanismos, condiciones y acoplamientos | Conducción estacionaria y transitoria con fuente uniforme, Dirichlet y aislamiento | Convección, radiación, fase, contacto térmico y coeficientes variables |
-| Electrostática | Interfaces amplias de AC/DC y acoplamientos | Potencial estacionario, carga uniforme, potencial fijo y carga nula | Dieléctricos múltiples, corrientes, magnetismo, frecuencia y terminales |
-| Mecánica estructural | Sólidos, vigas, placas, no linealidad, contacto, dinámica y más | Elasticidad lineal 2D, tensión/deformación plana, fuerzas de cuerpo, apoyos y desplazamiento normal prescrito | Tracciones no nulas, grandes deformaciones, plasticidad, contacto, dinámica, elementos estructurales y 3D |
-| Otras físicas | CFD, acústica, química, electromagnetismo y más | Ninguna | Fluidos, ondas, reacciones y demás interfaces |
-| Acoplamientos | Acoplamientos predefinidos y personalizados, fuertes y débiles | Las tres interfaces se resuelven por separado | Acoplamiento real, iteración multifísica y matrices de bloques |
-| Ecuaciones personalizadas | Interfaces de ecuaciones, variables y expresiones | Núcleos escalar y vectorial fijos y tipados | PDE/ODE generales, expresiones y API pública de plugins |
-| Elementos y malla | Malla libre, mapeada y por capas; distintos órdenes y tipos de elemento | Triángulos P1 mapeados o no estructurados; refinamiento rojo anidado 1→4 | Cuadriláteros, orden superior, capas, curvado y control general de tamaño/calidad |
-| Adaptación | Refinamiento y estrategias adaptativas según estudio/física | Refinamiento uniforme ×2 en h y estudio automático de autoconvergencia en ambos tipos de malla | Estimadores de error y adaptación h/p orientada por solución |
-| Estudios | Estacionario, transitorio, autovalores, frecuencia, barridos, optimización y más | Estacionario; transitorio térmico; barrido de siete parámetros; convergencia de malla | Autovalores, armónicos, optimización, UQ y estudios multipaso |
-| Integración temporal | Métodos y control temporal según el problema | Euler implícito de primer orden, paso fijo, salida seleccionable | BDF, orden superior, paso adaptativo, eventos y parada por criterios |
-| Solvers | Directos e iterativos, precondicionadores, segregados, no lineales y multigrid | CG–Jacobi y LDLᵀ directo disperso sin pivotaje, ambos para sistemas SPD | Reordenamiento y pivotaje, AMG, no lineales, bloques, sistemas generales y control avanzado |
-| HPC | Paralelismo, clúster y opciones GPU | Un Web Worker local para cálculo, convergencia y barridos; interfaz no bloqueada | WASM nativo, ejecución paralela, memoria compartida, MPI/GPU y cancelación inmediata |
-| Postproceso | Conjuntos de datos, cortes, gráficas, sondas, integrales y animaciones | Campos y vectores; deformada y von Mises; integrales, sondas, tiempo y barridos | Cortes arbitrarios, líneas de corriente, animación exportable y operadores |
-| Exportación e informes | Múltiples formatos, informes y presentaciones | JSON, CSV, VTK con desplazamiento/von Mises, CSV derivados e informe HTML | VTU/HDF5, series completas, imágenes por lotes e informes configurables |
-| Aplicaciones y gestión | Application Builder, Model Manager, despliegue y colaboración | Presets y archivos locales de proyecto | Editor de apps, servidor, versiones, permisos y colaboración |
-| Automatización | Métodos, API y herramientas de producto | Núcleo TypeScript sin React y scripts de validación | API estable, CLI batch, Python y servidor de estudios |
-| Verificación | Amplia experiencia industrial y recursos de verificación | Benchmarks analíticos, equivalencia CG/LDLᵀ en tres físicas y transitorio, convergencia y navegador | Manufactured solutions adicionales, regresión numérica amplia y certificación por dominio |
+| Flujo Model Builder | Geometría, selecciones, materiales, física, malla, estudios y resultados integrados | Árbol integrado, presets, estados obsoletos y validación de esquema | Variables, funciones, unidades y secuencias generales de nodos |
+| Dimensión y geometría | 1D, 2D, axisimetría y 3D; operaciones paramétricas y booleanas | Rectángulo paramétrico o un polígono simple 2D | Primitivas, agujeros, booleanas, axisimetría, 3D y multi-dominio |
+| CAD e importación | CAD/ECAD, reparación y simplificación según productos | CSV y SVG polygon/polyline/path lineal | Curvas, STEP, IGES, STL, ECAD y reparación |
+| Materiales | Bibliotecas, anisotropía, no linealidad y propiedades variables | Un material isotrópico con gradientes espaciales lineales de k, εr y E | Biblioteca, mezclas, anisotropía y dependencia de campo |
+| Transferencia de calor | Mecanismos, condiciones y acoplamientos amplios | Conducción estacionaria/transitoria, k(x,y), fuente uniforme y selecciones de aristas | Convección, radiación, fase, contacto térmico y fuentes generales |
+| Electrostática | Interfaces amplias de AC/DC y acoplamientos | Potencial estacionario, εr(x,y), carga uniforme y selecciones de aristas | Multi-dieléctrico, corrientes, magnetismo, frecuencia y terminales |
+| Mecánica estructural | No linealidad, contacto, dinámica, vigas, placas y 3D | Elasticidad lineal 2D, tracciones P1 y desplazamiento normal | Grandes deformaciones, plasticidad, contacto, dinámica y 3D |
+| Acoplamientos | Predefinidos/personalizados, fuertes y débiles | Dilatación térmica–estructural unidireccional estacionaria | Acoplamiento fuerte, iteración multifísica y matrices de bloques |
+| Otras físicas | CFD, acústica, química, electromagnetismo y más | Ecuación escalar de difusión–reacción adicional | Fluidos, ondas, reacciones y demás interfaces |
+| Ecuaciones personalizadas | Variables, expresiones y ecuaciones generales | `−∇·(c∇u)+au=f` con coeficientes constantes y API tipada | Parser de expresiones, PDE/ODE generales y SDK de plugins |
+| Selecciones | Dominios, aristas, puntos y selecciones derivadas | Overrides por índice de arista geométrica para las cuatro interfaces | Selecciones por caja/bola, grupos, puntos, dominios y operaciones lógicas |
+| Elementos y malla | Tipos, órdenes, capas, curvado y controles avanzados | Triángulos P1 mapeados/no estructurados y refinamiento rojo | Cuadriláteros, orden superior, capas, curvado y métricas generales |
+| Adaptación | Estrategias adaptativas según estudio/física | Recuperación de gradiente, marcado y bisección conforme para escalar estacionario | Estimadores garantizados, objetivos, h/p, elasticidad y transitorios |
+| Estudios | Estacionario, transitorio, autovalores, frecuencia, optimización y más | Estacionario, transitorio térmico, barridos, convergencia y adaptación | Autovalores, armónicos, optimización, UQ y multipaso |
+| Verificación | Experiencia industrial y recursos de validación | Benchmarks analíticos, soluciones manufacturadas y errores exactos | Regresión amplia, más referencias y certificación por dominio |
+| Integración temporal | Métodos y control según el problema | Euler implícito de primer orden y paso fijo | BDF, orden superior, paso adaptativo y eventos |
+| Solvers | Directos, iterativos, segregados, no lineales y multigrid | CG–Jacobi/IC(0), LDLᵀ SPD y orden natural/RCM | Pivotaje, AMG, no lineales, bloques y sistemas generales |
+| HPC | Paralelismo, clúster y GPU | Un Worker; kernel WASM de producto escalar con fallback JS | Solver WASM completo, memoria compartida, MPI/GPU y cancelación inmediata |
+| Postproceso | Cortes, gráficas, sondas, integrales y animaciones | Campos/vectores, deformada, von Mises, integrales y sondas | Cortes arbitrarios, líneas de corriente, animación exportable y operadores |
+| Exportación e informes | Múltiples formatos e informes configurables | JSON, CSV, VTK e informe HTML | VTU/HDF5, series completas e informes configurables |
+| Aplicaciones y gestión | Application Builder, Model Manager y colaboración | Presets y archivos locales | Editor de apps, servidor, permisos y colaboración |
+| Automatización | Métodos, API y herramientas de producto | API pública TypeScript, ES module y declaraciones | Estabilidad 1.0, CLI batch, Python y servidor de estudios |
 
-## Funciones cerradas en esta iteración
+## Las cinco prioridades cerradas en esta iteración
 
-- Solver directo LDLᵀ disperso sin matriz densa N×N, seleccionable junto a CG–Jacobi para sistemas SPD.
-- Cálculo, convergencia de malla y barridos en un Web Worker persistente, con invalidación lógica de respuestas obsoletas al editar el modelo.
-- Proyecto esquema v6 con migración aditiva v1–v5 y selección de solver conservada en resultados.
-- Pruebas de factorización, sistemas no SPD, equivalencia directa/iterativa en las tres físicas y en un transitorio, más validación del Worker en navegador.
-- WASM, paralelismo multinúcleo y cancelación inmediata permanecen pendientes; no se afirma que estén implementados.
+1. **Acoplamiento y cargas.** Tracciones consistentes no nulas y dilatación térmica–estructural unidireccional, con benchmarks analíticos.
+2. **Selecciones y coeficientes.** Overrides por arista geométrica y gradientes lineales de propiedades, incluida verificación logarítmica y validación de positividad.
+3. **Adaptación y verificación.** Recuperación de gradiente, marcado, bisección conforme y errores frente a soluciones manufacturadas.
+4. **Kernels y solvers.** Producto escalar WASM reproducible, RCM e IC(0), contrastados con variantes de referencia.
+5. **API y ecuación propia.** Entrada pública `src/lib/openphysics.ts`, build ES/declaraciones y física escalar `−∇·(c∇u)+au=f`.
+
+Estas mejoras no eliminan las brechas de la matriz. En particular, el WASM no es un solver completo, IC(0) no equivale a multigrid, la adaptación no es h/p y la ecuación personalizada no es un lenguaje de expresiones.
 
 ## Límites numéricos que el usuario debe conocer
 
-- Los modelos son 2D por unidad de profundidad, con coeficientes y fuentes uniformes.
-- No se admiten agujeros, curvas SVG, múltiples subpaths, CAD ni operaciones booleanas.
-- Las condiciones nombradas se aplican en los extremos del bounding box; las demás aristas poligonales usan su condición natural. No existe selección arbitraria de aristas.
-- Los barridos de anchura/altura no escalan polígonos: están restringidos a rectángulos; los parámetros de material y física sí pueden barrerse.
-- El transitorio usa `(M/Δt + K)Tⁿ⁺¹ = M/Δt Tⁿ + F`, matriz de masa consistente y Euler implícito de primer orden.
-- La convergencia de malla compara mallas sucesivas; no mide por sí sola el error frente a una solución exacta. El refinamiento poligonal es uniforme, no adaptativo.
-- Los extremos nodales son exactos para campos P1, pero no sustituyen una evaluación de cantidades derivadas discontinuas de mayor complejidad.
-- En elasticidad, la integral derivada interpola la magnitud nodal del desplazamiento; no integra exactamente su raíz cuadrada dentro del elemento.
+- Modelos 2D por unidad de profundidad, un dominio y un material isotrópico; elementos P1.
+- Las propiedades variables son afines en x/y; las fuentes ordinarias y los coeficientes de la PDE personalizada son constantes.
+- Las condiciones por arista usan índices geométricos y reglas deterministas en esquinas; no hay selecciones generales por dominios/puntos.
+- La adaptación escalar no ofrece una cota de error garantizada; elasticidad y transitorios usan refinamiento uniforme.
+- La convergencia entre mallas se reporta por separado del error exacto. El orden observado no se interpreta en el suelo del solver.
+- LDLᵀ no usa pivotaje y solo admite SPD; CG requiere una formulación SPD y un precondicionador estable.
 - La validación automatizada no equivale a certificación para diseño industrial o seguridad.
 
-## Prioridad recomendada
+## Siguiente prioridad recomendada
 
-1. Acoplamiento térmico–estructural en una dirección y tracciones de contorno no nulas.
-2. Selecciones arbitrarias de aristas y coeficientes espacialmente variables.
-3. Adaptación guiada por error y más soluciones manufacturadas.
-4. WASM, reordenamiento disperso y precondicionadores escalables.
-5. API pública de física y estudios, seguida de ecuaciones personalizadas.
+Después de estas cinco mejoras, la brecha estructural más importante es pasar de un único dominio/material a **geometría multi-dominio con selecciones y materiales por dominio**. Ese cambio condiciona el ensamblaje, las condiciones de interfaz, la malla, los estudios y el formato de proyecto; conviene abordarlo antes de añadir más interfaces físicas.
 
 ## Fuentes oficiales consultadas
 
 - [COMSOL Multiphysics — Model Builder](https://www.comsol.com/comsol-multiphysics/model-builder)
 - [COMSOL Multiphysics — plataforma](https://www.comsol.com/comsol-multiphysics)
 - [COMSOL 6.4 — Release Highlights](https://www.comsol.com/release/6.4)
-- [COMSOL — Introduction training: physics, sweeps, geometry, mesh, studies, apps y Model Manager](https://www.comsol.com/events/training-course/introduction-to-comsol-multiphysics-129371)
+- [COMSOL — Introduction training](https://www.comsol.com/events/training-course/introduction-to-comsol-multiphysics-129371)

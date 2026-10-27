@@ -1,6 +1,6 @@
 export const VACUUM_PERMITTIVITY = 8.8541878128e-12
 
-export type ActivePhysics = 'heat' | 'electrostatics' | 'elasticity'
+export type ActivePhysics = 'heat' | 'electrostatics' | 'elasticity' | 'custom'
 
 export type BoundaryCondition =
   | { type: 'temperature'; value: number }
@@ -15,9 +15,16 @@ export type StructuralBoundaryCondition =
   | { type: 'fixed' }
   | { type: 'roller' }
   | { type: 'normalDisplacement'; value: number }
+  | { type: 'traction'; x: number; y: number }
+
+export type CustomBoundaryCondition =
+  | { type: 'dirichlet'; value: number }
+  | { type: 'neumann'; value: number }
 
 export type StudyType = 'stationary' | 'transient'
 export type SolverKind = 'iterative' | 'direct'
+export type PreconditionerKind = 'jacobi' | 'ic0'
+export type SolverOrdering = 'natural' | 'rcm'
 
 export type SweepParameter =
   | 'geometry.width'
@@ -29,7 +36,7 @@ export type SweepParameter =
   | 'electrostatics.chargeDensity'
 
 export interface HeatModel {
-  schemaVersion: 6
+  schemaVersion: 7
   name: string
   activePhysics: ActivePhysics
   geometry: {
@@ -45,6 +52,15 @@ export interface HeatModel {
     heatCapacity: number
     youngsModulus: number
     poissonRatio: number
+    thermalExpansion: number
+    gradients: {
+      conductivityX: number
+      conductivityY: number
+      permittivityX: number
+      permittivityY: number
+      youngsModulusX: number
+      youngsModulusY: number
+    }
   }
   physics: {
     heatSource: number
@@ -64,10 +80,27 @@ export interface HeatModel {
     planeState: 'planeStress' | 'planeStrain'
     bodyForceX: number
     bodyForceY: number
+    thermalCoupling: boolean
+    referenceTemperature: number
     left: StructuralBoundaryCondition
     right: StructuralBoundaryCondition
     top: StructuralBoundaryCondition
     bottom: StructuralBoundaryCondition
+  }
+  custom: {
+    diffusion: number
+    reaction: number
+    source: number
+    left: CustomBoundaryCondition
+    right: CustomBoundaryCondition
+    top: CustomBoundaryCondition
+    bottom: CustomBoundaryCondition
+  }
+  edgeBoundaries: {
+    heat: Record<string, BoundaryCondition>
+    electrostatics: Record<string, ElectricBoundaryCondition>
+    elasticity: Record<string, StructuralBoundaryCondition>
+    custom: Record<string, CustomBoundaryCondition>
   }
   mesh: {
     nx: number
@@ -77,6 +110,9 @@ export interface HeatModel {
   study: {
     type: StudyType
     solver: SolverKind
+    preconditioner: PreconditionerKind
+    ordering: SolverOrdering
+    manufacturedSolution: 'none' | 'scalarSine' | 'logarithmic'
     tolerance: number
     maxIterations: number
   }
@@ -92,6 +128,10 @@ export interface HeatModel {
   }
   convergence: {
     levels: number
+  }
+  adaptive: {
+    levels: number
+    markFraction: number
   }
 }
 
@@ -166,6 +206,7 @@ export interface SimulationResult extends BaseSimulationResult {
     frames: TransientFrame[]
     timeSteps: number
     conductivity: number
+    conductivities?: number[]
   }
 }
 
@@ -182,9 +223,20 @@ export interface StructuralSimulationResult extends BaseSimulationResult {
   stress: TensorValue[]
   vonMises: number[]
   planeState: 'planeStress' | 'planeStrain'
+  thermal?: {
+    temperature: number[]
+    referenceTemperature: number
+    expansion: number
+  }
 }
 
-export type AnySimulationResult = SimulationResult | ElectricSimulationResult | StructuralSimulationResult
+export interface CustomSimulationResult extends BaseSimulationResult {
+  physics: 'custom'
+  values: number[]
+  gradient: VectorValue[]
+}
+
+export type AnySimulationResult = SimulationResult | ElectricSimulationResult | StructuralSimulationResult | CustomSimulationResult
 
 export interface ConvergenceEntry {
   level: number
@@ -201,6 +253,8 @@ export interface ConvergenceEntry {
   maximumDifference?: number
   nearSolverFloor?: boolean
   observedOrder?: number
+  exactL2?: number
+  exactMaximum?: number
 }
 
 export interface ConvergenceReport {
@@ -211,14 +265,32 @@ export interface ConvergenceReport {
   totalTimeMs: number
 }
 
+export interface AdaptiveEntry {
+  level: number
+  nodes: number
+  triangles: number
+  estimatedError: number
+  markedTriangles: number
+  exactL2?: number
+  exactMaximum?: number
+}
+
+export interface AdaptiveReport {
+  physics: ActivePhysics
+  entries: AdaptiveEntry[]
+  finest: AnySimulationResult
+  totalTimeMs: number
+}
+
 export const defaultModel: HeatModel = {
-  schemaVersion: 6,
+  schemaVersion: 7,
   name: 'Thermal plate study',
   activePhysics: 'heat',
   geometry: { shape: 'rectangle', width: 0.1, height: 0.05, vertices: [{ x: 0, y: 0 }, { x: 0.1, y: 0 }, { x: 0.1, y: 0.05 }, { x: 0, y: 0.05 }] },
   material: {
     conductivity: 45, relativePermittivity: 1, density: 7850, heatCapacity: 475,
-    youngsModulus: 200e9, poissonRatio: 0.3,
+    youngsModulus: 200e9, poissonRatio: 0.3, thermalExpansion: 12e-6,
+    gradients: { conductivityX: 0, conductivityY: 0, permittivityX: 0, permittivityY: 0, youngsModulusX: 0, youngsModulusY: 0 },
   },
   physics: {
     heatSource: 250000,
@@ -238,14 +310,27 @@ export const defaultModel: HeatModel = {
     planeState: 'planeStress',
     bodyForceX: 0,
     bodyForceY: 0,
+    thermalCoupling: false,
+    referenceTemperature: 20,
     left: { type: 'fixed' },
     right: { type: 'normalDisplacement', value: 0.00001 },
     top: { type: 'free' },
     bottom: { type: 'roller' },
   },
+  custom: {
+    diffusion: 1,
+    reaction: 0,
+    source: 1,
+    left: { type: 'dirichlet', value: 0 },
+    right: { type: 'dirichlet', value: 0 },
+    top: { type: 'neumann', value: 0 },
+    bottom: { type: 'neumann', value: 0 },
+  },
+  edgeBoundaries: { heat: {}, electrostatics: {}, elasticity: {}, custom: {} },
   mesh: { nx: 28, ny: 16, refinement: 1 },
-  study: { type: 'stationary', solver: 'iterative', tolerance: 1e-9, maxIterations: 2000 },
+  study: { type: 'stationary', solver: 'iterative', preconditioner: 'jacobi', ordering: 'rcm', manufacturedSolution: 'none', tolerance: 1e-9, maxIterations: 2000 },
   transient: { initialTemperature: 20, duration: 10, timeSteps: 100, outputSteps: 20 },
   sweep: { parameter: 'material.conductivity', values: [15, 45, 100] },
   convergence: { levels: 3 },
+  adaptive: { levels: 3, markFraction: 0.3 },
 }

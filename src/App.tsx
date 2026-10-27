@@ -18,6 +18,7 @@ import {
   Waves,
   Zap,
 } from 'lucide-react'
+import { AdaptivePanel } from '@/components/AdaptivePanel'
 import { ModelTree, type NodeId } from '@/components/ModelTree'
 import { Inspector } from '@/components/Inspector'
 import { ConvergencePanel } from '@/components/ConvergencePanel'
@@ -31,7 +32,7 @@ import { heatResultAtTime } from '@/lib/fem/heat'
 import { createStudyJobClient } from '@/lib/fem/jobClient'
 import { type SweepReport } from '@/lib/fem/sweep'
 import { solveActiveModel } from '@/lib/fem/study'
-import { defaultModel, type ActivePhysics, type AnySimulationResult, type ConvergenceReport, type HeatModel } from '@/lib/fem/types'
+import { defaultModel, type ActivePhysics, type AdaptiveReport, type AnySimulationResult, type ConvergenceReport, type HeatModel } from '@/lib/fem/types'
 import './App.css'
 
 const initialModel = structuredClone(defaultModel)
@@ -45,6 +46,7 @@ function App() {
   const [result, setResult] = useState<AnySimulationResult | null>(() => solveActiveModel(initialModel))
   const [resultSignature, setResultSignature] = useState(initialSignature)
   const [convergenceReport, setConvergenceReport] = useState<ConvergenceReport | null>(null)
+  const [adaptiveReport, setAdaptiveReport] = useState<AdaptiveReport | null>(null)
   const [sweepReport, setSweepReport] = useState<SweepReport | null>(null)
   const [selectedCase, setSelectedCase] = useState(0)
   const [frameIndex, setFrameIndex] = useState(0)
@@ -75,6 +77,7 @@ function App() {
     setConverging(false)
     setModel(next)
     setConvergenceReport(null)
+    setAdaptiveReport(null)
     setSweepReport(null)
     setFrameIndex(0)
   }
@@ -87,6 +90,7 @@ function App() {
       setResult(next)
       setResultSignature(modelSignature(candidate))
       setConvergenceReport(null)
+      setAdaptiveReport(null)
       setSweepReport(null)
       setFrameIndex(next.physics === 'heat' && next.transient ? next.transient.frames.length - 1 : 0)
       setView('results')
@@ -119,6 +123,26 @@ function App() {
       if (request === operation.current) setConverging(false)
     }
   }
+  const runAdaptive = async () => {
+    const request = ++operation.current
+    setConverging(true)
+    try {
+      const report = await getJobClient().adaptive(model)
+      if (request !== operation.current) return
+      setAdaptiveReport(report)
+      setConvergenceReport(null)
+      setSweepReport(null)
+      setResult(report.finest)
+      setResultSignature(modelSignature(model))
+      setView('results')
+      setSelected('adaptive')
+      notify(`Adaptive study completed: ${report.entries.length} levels`)
+    } catch (error) {
+      if (request === operation.current) notify(error instanceof Error ? error.message : 'Unable to run adaptive study', 'error')
+    } finally {
+      if (request === operation.current) setConverging(false)
+    }
+  }
   const runSweep = async () => {
     const request = ++operation.current
     setConverging(true)
@@ -127,6 +151,7 @@ function App() {
       if (request !== operation.current) return
       setSweepReport(report)
       setConvergenceReport(null)
+      setAdaptiveReport(null)
       setSelectedCase(0)
       setResult(report.cases[0]!.result)
       setResultSignature(modelSignature(model))
@@ -170,7 +195,7 @@ function App() {
       return
     }
     if (!displayResult) return
-    const stem = displayResult.physics === 'heat' ? 'temperature-field' : displayResult.physics === 'electrostatics' ? 'electric-potential' : 'structural-displacement'
+    const stem = displayResult.physics === 'heat' ? 'temperature-field' : displayResult.physics === 'electrostatics' ? 'electric-potential' : displayResult.physics === 'custom' ? 'custom-scalar-field' : 'structural-displacement'
     if (format === 'csv') downloadText(`${stem}.csv`, toCsv(displayResult), 'text/csv')
     if (format === 'vtk') downloadText(`${stem}.vtk`, toVtk(displayResult))
     if (format === 'derived') downloadText('derived-values.csv', toDerivedCsv(displayResult), 'text/csv')
@@ -197,8 +222,8 @@ function App() {
     const applicable = physics === 'heat'
       ? [...common, 'material.conductivity', 'physics.heatSource']
       : physics === 'electrostatics' ? [...common, 'material.relativePermittivity', 'electrostatics.chargeDensity']
-        : [...common, 'material.youngsModulus']
-    const fallback: HeatModel['sweep']['parameter'] = physics === 'heat' ? 'material.conductivity' : physics === 'electrostatics' ? 'material.relativePermittivity' : 'material.youngsModulus'
+        : physics === 'elasticity' ? [...common, 'material.youngsModulus'] : common
+    const fallback: HeatModel['sweep']['parameter'] = physics === 'heat' ? 'material.conductivity' : physics === 'electrostatics' ? 'material.relativePermittivity' : physics === 'elasticity' ? 'material.youngsModulus' : 'geometry.width'
     return {
       ...model,
       activePhysics: physics,
@@ -208,16 +233,18 @@ function App() {
   }
   const changePhysics = (physics: ActivePhysics) => {
     updateModel(modelForPhysics(physics))
-    setQuantity(physics === 'heat' ? 'temperature' : physics === 'electrostatics' ? 'potential' : 'displacement')
-    setSelected(physics === 'heat' ? 'physics' : physics === 'electrostatics' ? 'electrostatics' : 'elasticity')
+    setQuantity(physics === 'heat' ? 'temperature' : physics === 'electrostatics' ? 'potential' : physics === 'custom' ? 'custom' : 'displacement')
+    setSelected(physics === 'heat' ? 'physics' : physics === 'electrostatics' ? 'electrostatics' : physics === 'custom' ? 'custom' : 'elasticity')
   }
   const selectNode = (node: NodeId) => {
     if (thermalNodes.includes(node) && model.activePhysics !== 'heat') updateModel(modelForPhysics('heat'))
     if (electricNodes.includes(node) && model.activePhysics !== 'electrostatics') updateModel(modelForPhysics('electrostatics'))
     if (structuralNodes.includes(node) && model.activePhysics !== 'elasticity') updateModel(modelForPhysics('elasticity'))
+    if (node === 'custom' && model.activePhysics !== 'custom') updateModel(modelForPhysics('custom'))
     if (thermalNodes.includes(node)) setQuantity('temperature')
     if (electricNodes.includes(node)) setQuantity('potential')
     if (structuralNodes.includes(node)) setQuantity('displacement')
+    if (node === 'custom') setQuantity('custom')
     setSelected(node)
     if (node === 'geometry') setView('geometry')
     if (node === 'mesh') setView('mesh')
@@ -271,12 +298,13 @@ function App() {
     loadModel(next)
   }
 
-  const resultUnit = quantity === 'vonMises' ? 'Pa' : result?.physics === 'elasticity' ? 'm' : result?.physics === 'electrostatics' ? quantity === 'electricField' ? 'V/m' : 'V' : quantity === 'flux' ? 'W/m²' : '°C'
-  const physicsName = model.activePhysics === 'heat' ? 'Heat Transfer in Solids' : model.activePhysics === 'electrostatics' ? 'Electrostatics' : 'Linear Elasticity'
-  const quantityValues = !displayResult ? [] : displayResult.physics === 'elasticity'
+  const resultUnit = quantity === 'vonMises' ? 'Pa' : result?.physics === 'elasticity' ? 'm' : result?.physics === 'electrostatics' ? quantity === 'electricField' ? 'V/m' : 'V' : result?.physics === 'custom' ? quantity === 'customGradient' ? '|∇u|' : 'u' : quantity === 'flux' ? 'W/m²' : '°C'
+  const physicsName = model.activePhysics === 'heat' ? 'Heat Transfer in Solids' : model.activePhysics === 'electrostatics' ? 'Electrostatics' : model.activePhysics === 'custom' ? 'Custom Scalar PDE' : 'Linear Elasticity'
+  const quantityValues: number[] = !displayResult ? [] : displayResult.physics === 'elasticity'
     ? quantity === 'vonMises' ? displayResult.vonMises : displayResult.displacement.map((value) => value.magnitude)
     : displayResult.physics === 'electrostatics' ? quantity === 'electricField' ? displayResult.electricField.map((value) => value.magnitude) : displayResult.potential
-      : quantity === 'flux' ? displayResult.flux.map((value) => value.magnitude) : displayResult.temperature
+      : displayResult.physics === 'custom' ? quantity === 'customGradient' ? displayResult.gradient.map((value) => value.magnitude) : displayResult.values
+        : quantity === 'flux' ? displayResult.flux.map((value) => value.magnitude) : displayResult.temperature
   const metricMinimum = quantityValues.length ? Math.min(...quantityValues) : 0
   const metricMaximum = quantityValues.length ? Math.max(...quantityValues) : 0
   const metricAverage = quantityValues.length ? quantityValues.reduce((sum, value) => sum + value, 0) / quantityValues.length : 0
@@ -306,7 +334,7 @@ function App() {
       <div className="ribbon-group preset-group"><Flame size={16} className="text-orange-500" /><select aria-label="Example model" onChange={(event) => choosePreset(event.target.value)} value=""><option value="" disabled>Example models</option><option value="plate">Thermal plate study</option><option value="bar">Insulated conduction bar</option><option value="generation">Volumetric heating plate</option><option value="electric">Parallel plate capacitor</option><option value="polygon">L-shaped electrostatic domain</option><option value="tension">Uniaxial tension patch</option></select><ChevronDown size={12} /></div>
       <div className="ribbon-separator" />
       <button className="ribbon-button" onClick={() => selectNode('geometry')}><Box size={16} /><span>Geometry</span></button>
-      <div className="physics-picker">{model.activePhysics === 'heat' ? <Flame size={15} /> : model.activePhysics === 'electrostatics' ? <Zap size={15} /> : <Box size={15} />}<select aria-label="Active physics" value={model.activePhysics} onChange={(event) => changePhysics(event.target.value as ActivePhysics)}><option value="heat">Heat Transfer</option><option value="electrostatics">Electrostatics</option><option value="elasticity">Linear Elasticity</option></select><Activity size={12} /></div>
+      <div className="physics-picker">{model.activePhysics === 'heat' ? <Flame size={15} /> : model.activePhysics === 'electrostatics' ? <Zap size={15} /> : model.activePhysics === 'custom' ? <Activity size={15} /> : <Box size={15} />}<select aria-label="Active physics" value={model.activePhysics} onChange={(event) => changePhysics(event.target.value as ActivePhysics)}><option value="heat">Heat Transfer</option><option value="electrostatics">Electrostatics</option><option value="elasticity">Linear Elasticity</option><option value="custom">Custom scalar PDE</option></select><Activity size={12} /></div>
       <button className="ribbon-button" onClick={() => selectNode('mesh')}><Grid3X3 size={16} /><span>Mesh</span></button>
       <div className="header-spacer" />{stale && <span className="outdated-label">Model modified</span>}
       <button className="compute-button" disabled={busy} onClick={() => compute()}>{busy ? <LoaderCircle size={16} className="spin" /> : <Play size={15} fill="currentColor" />}{converging ? 'Studying…' : computing ? 'Computing…' : 'Compute'}<kbd>Ctrl ↵</kbd></button>
@@ -320,7 +348,7 @@ function App() {
           <div className="header-spacer" />
           {view === 'results' && <>
             <select className="quantity-select" value={quantity} onChange={(event) => setQuantity(event.target.value as ResultQuantity)} aria-label="Result quantity">
-              {result?.physics === 'electrostatics' ? <><option value="potential">Electric potential (V)</option><option value="electricField">Electric field (V/m)</option></> : result?.physics === 'elasticity' ? <><option value="displacement">Displacement magnitude (m)</option><option value="vonMises">von Mises stress (Pa)</option></> : <><option value="temperature">Temperature (°C)</option><option value="flux">Heat flux (W/m²)</option></>}
+              {result?.physics === 'electrostatics' ? <><option value="potential">Electric potential (V)</option><option value="electricField">Electric field (V/m)</option></> : result?.physics === 'elasticity' ? <><option value="displacement">Displacement magnitude (m)</option><option value="vonMises">von Mises stress (Pa)</option></> : result?.physics === 'custom' ? <><option value="custom">Scalar field u</option><option value="customGradient">Gradient magnitude |∇u|</option></> : <><option value="temperature">Temperature (°C)</option><option value="flux">Heat flux (W/m²)</option></>}
             </select>
             <label className="mesh-toggle"><input type="checkbox" checked={showMesh} onChange={(event) => setShowMesh(event.target.checked)} />Show mesh</label>
           </>}
@@ -334,6 +362,7 @@ function App() {
           setFrameIndex(selectedResult.physics === 'heat' && selectedResult.transient ? selectedResult.transient.frames.length - 1 : 0)
         }} onClose={() => setSweepReport(null)} onExport={() => exportFile('sweep')} />}
         {convergenceReport && view === 'results' && <ConvergencePanel report={convergenceReport} onClose={() => setConvergenceReport(null)} />}
+        {adaptiveReport && view === 'results' && <AdaptivePanel report={adaptiveReport} onClose={() => setAdaptiveReport(null)} />}
         {displayResult && view === 'results' && <DerivedValuesPanel result={displayResult} frameIndex={frameIndex} onFrameChange={setFrameIndex} />}
         <div className="metrics-strip">
           <div className="metric"><span>MINIMUM</span><strong>{displayResult ? metricMinimum.toExponential(3) : '—'} <small>{resultUnit}</small></strong></div>
@@ -343,7 +372,7 @@ function App() {
           <div className="metric solver-metric"><span>LINEAR SOLVER</span><strong className={displayResult?.converged ? 'converged' : 'not-converged'}>{displayResult ? displayResult.solver === 'direct' ? 'DIRECT LDLᵀ' : 'ITERATIVE CG' : '—'}</strong><small>{displayResult ? `${displayResult.converged ? 'Converged' : 'Check residual'} · ${displayResult.solver === 'iterative' ? `${displayResult.iterations} iterations · ` : ''}${displayResult.relativeResidual.toExponential(1)} residual` : 'Not solved'}</small></div>
         </div>
       </section>
-      <Inspector model={model} selected={selected} result={displayResult} stale={stale} converging={converging} onChange={updateModel} onImportGeometry={importGeometry} onExport={exportFile} onRunConvergence={runConvergence} onRunSweep={runSweep} />
+      <Inspector model={model} selected={selected} result={displayResult} stale={stale} converging={converging} onChange={updateModel} onImportGeometry={importGeometry} onExport={exportFile} onRunConvergence={runConvergence} onRunAdaptive={runAdaptive} onRunSweep={runSweep} />
     </main>
 
     <footer className="status-bar"><span className={`status-indicator ${result?.converged && !stale ? 'ok' : ''}`} /><span>{converging ? 'Running successive mesh studies…' : computing ? 'Assembling and solving…' : stale ? 'Results need updating' : result?.converged ? 'Study completed successfully' : 'Ready'}</span><span className="status-divider">|</span><span>2D · {physicsName}</span><div className="header-spacer" /><Gauge size={12} /><span>{result ? `${result.solveTimeMs.toFixed(1)} ms` : '—'}</span><span className="status-divider">|</span><span>Local session</span><Download size={12} /><span>Open data</span></footer>
