@@ -26,6 +26,57 @@ try {
 }
 
 await mkdir(output, { recursive: true })
+
+async function validatePhotonicTemplate(page, { id, name, side, voltage, screenshot }) {
+  await page.getByLabel('Example model').selectOption(id)
+  await page.waitForFunction((expectedName) => document.querySelector('.document-name')?.value === expectedName && !document.querySelector('.outdated-label'), name, { timeout: 60000 })
+  assert.equal(await page.getByLabel('Active physics').inputValue(), 'electrostatics')
+  await page.locator('.ribbon-button').filter({ hasText: 'Geometry' }).click()
+  assert.equal(await page.getByLabel('Active domain', { exact: true }).locator('option').count(), 3)
+  await page.getByLabel('Active domain name').fill(`${name} · edited p contact`)
+
+  const widthField = page.getByLabel('Global bounding box width')
+  const heightField = page.getByLabel('Global bounding box height')
+  const targetWidth = Number(await widthField.inputValue()) * 4
+  const targetHeight = Number(await heightField.inputValue()) * 4
+  await widthField.fill(String(Number(await widthField.inputValue()) * 2))
+  await heightField.fill(String(Number(await heightField.inputValue()) * 2))
+  const areaField = page.getByLabel('Active domain area')
+  await areaField.fill(String(Number(await areaField.inputValue()) * 4))
+  await page.locator('.outdated-label').waitFor()
+  assert(Math.abs(Number(await widthField.inputValue()) - targetWidth) < targetWidth * 1e-9)
+  assert(Math.abs(Number(await heightField.inputValue()) - targetHeight) < targetHeight * 1e-9)
+  await page.locator('.compute-button').click()
+  await page.waitForFunction(() => document.querySelector('.viewport-label')?.textContent?.includes('Electric potential') && !document.querySelector('.outdated-label'), { timeout: 60000 })
+
+  await page.getByRole('button', { name: 'Materials', exact: true }).click()
+  await page.getByLabel('Material domain').selectOption('1')
+  await page.getByLabel('Relative permittivity').fill('12')
+  await page.locator('.compute-button').click()
+  await page.waitForFunction(() => !document.querySelector('.outdated-label'), { timeout: 60000 })
+
+  await page.getByRole('button', { name: `${side} boundary`, exact: true }).nth(1).click()
+  await page.getByLabel('Electric potential').fill(String(voltage))
+  await page.locator('.compute-button').click()
+  await page.waitForFunction(() => !document.querySelector('.outdated-label'), { timeout: 60000 })
+
+  await page.getByRole('button', { name: 'Mesh convergence', exact: true }).click()
+  await page.getByLabel('Grid levels').selectOption('2')
+  await page.getByRole('button', { name: 'Run convergence study' }).click()
+  await page.locator('.convergence-panel').waitFor({ timeout: 60000 })
+  assert.equal(await page.locator('.convergence-table tbody tr').count(), 2)
+
+  await page.getByRole('button', { name: 'Parametric sweep', exact: true }).click()
+  assert.equal(await page.getByLabel('Sweep parameter').inputValue(), `electrostatics.${side.toLowerCase()}Voltage`)
+  await page.getByLabel('Sweep values').fill(side === 'Left' ? '-1, -3' : '1, 3')
+  await page.getByLabel('Sweep values').press('Tab')
+  await page.getByRole('button', { name: 'Run parametric sweep' }).click()
+  await page.locator('.sweep-panel').waitFor({ timeout: 60000 })
+  assert.equal(await page.locator('.sweep-table tbody tr').count(), 2)
+  await page.locator('.sweep-table tbody tr').nth(1).click()
+  await page.screenshot({ path: path.join(output, screenshot), fullPage: true })
+}
+
 const server = spawn(process.execPath, [
   path.join(root, 'node_modules/vite/bin/vite.js'),
   '--host', '127.0.0.1', '--port', String(port), '--strictPort',
@@ -66,7 +117,7 @@ try {
   await page.locator('.view-tabs button').filter({ hasText: 'Mesh' }).click()
   await page.locator('.viewport-label').filter({ hasText: 'Mesh 1' }).waitFor()
   await page.locator('.ribbon-button').filter({ hasText: 'Geometry' }).click()
-  await page.getByLabel('Width').fill('0.12')
+  await page.getByLabel('Global bounding box width').fill('0.12')
   await page.locator('.outdated-label').waitFor()
   await page.locator('.compute-button').click()
   await page.locator('.toast.success').waitFor()
@@ -152,7 +203,7 @@ try {
   await page.getByLabel('Example model').selectOption('composite')
   await page.waitForFunction(() => document.querySelector('.document-name')?.value === 'Two-material composite plate' && !document.querySelector('.outdated-label'))
   await page.locator('.ribbon-button').filter({ hasText: 'Geometry' }).click()
-  assert.equal(await page.getByLabel('Active domain').locator('option').count(), 2)
+  assert.equal(await page.getByLabel('Active domain', { exact: true }).locator('option').count(), 2)
   assert.equal(await page.locator('.selection-card strong').textContent(), '2 domains · 4 active boundary segments')
   await page.screenshot({ path: path.join(output, 'openphysics-multidomain-geometry.png'), fullPage: true })
   await page.getByRole('button', { name: 'Materials', exact: true }).click()
@@ -168,8 +219,8 @@ try {
   assert.equal(await compositeDownload.failure(), null)
   await page.locator('.ribbon-button').filter({ hasText: 'Geometry' }).click()
   await page.getByRole('button', { name: 'Add disconnected rectangle domain' }).click()
-  assert.equal(await page.getByLabel('Active domain').locator('option').count(), 3)
-  assert.equal(await page.getByLabel('Active domain').inputValue(), '2')
+  assert.equal(await page.getByLabel('Active domain', { exact: true }).locator('option').count(), 3)
+  assert.equal(await page.getByLabel('Active domain', { exact: true }).inputValue(), '2')
   await page.screenshot({ path: path.join(output, 'openphysics-disconnected-domains.png'), fullPage: true })
 
   await page.getByLabel('Example model').selectOption('tension')
@@ -268,10 +319,13 @@ try {
   await page.getByLabel('Result quantity').selectOption('customGradient')
   await page.waitForFunction(() => document.querySelector('.viewport-label')?.textContent?.includes('Gradient magnitude'))
 
+  await validatePhotonicTemplate(page, { id: 'pinPhotodetector', name: 'Si PIN photodetector · reverse-bias cross-section', side: 'Left', voltage: -3, screenshot: 'openphysics-pin-photodetector.png' })
+  await validatePhotonicTemplate(page, { id: 'pnModulator', name: 'Si PN modulator · depletion cross-section', side: 'Right', voltage: 3, screenshot: 'openphysics-pn-modulator.png' })
+
   await page.setViewportSize({ width: 1100, height: 780 })
   await page.screenshot({ path: path.join(output, 'openphysics-compact.png'), fullPage: true })
   assert.deepEqual(errors, [], `Browser errors:\n${errors.join('\n')}`)
-  console.log('UI validation passed: thermal, transient, electrostatics, elasticity, custom PDE, IC(0), manufactured convergence, adaptive mesh, polygon import, multidomain geometry/materials, sweeps, exports and responsive layout.')
+  console.log('UI validation passed: thermal, transient, electrostatics, elasticity, custom PDE, IC(0), manufactured convergence, adaptive mesh, polygon import, multidomain geometry/materials, editable photonic templates, sweeps, exports and responsive layout.')
   console.log(`Screenshots: ${output}`)
 } finally {
   if (browser) await browser.close()

@@ -14,12 +14,15 @@ function coarseSample(fine: AnySimulationResult, coarseNodeIndex: number, coarse
 function compareGrids(coarse: AnySimulationResult, fine: AnySimulationResult) {
   const coarseValues = resultValues(coarse)
   const fineValues = resultValues(fine)
+  // Multidomain assembly inserts new nodes domain by domain, so coarse global
+  // indices need not remain contiguous even though every coarse coordinate is nested.
+  const fineAtCoordinates = new Map(fine.mesh.nodes.map((node, index) => [`${node.x}:${node.y}`, fineValues[index]!]))
   let squaredDifference = 0
   let squaredReference = 0
   let maximumDifference = 0
-  coarse.mesh.nodes.forEach((_, index) => {
-    // Red refinement preserves coarse indices; mapped grids use their structured mapping.
-    const fineValue = coarse.mesh.kind === 'unstructured' ? fineValues[index]! : coarseSample(fine, index, coarse.mesh.nx)
+  coarse.mesh.nodes.forEach((node, index) => {
+    const fineValue = coarse.mesh.kind === 'unstructured' ? fineAtCoordinates.get(`${node.x}:${node.y}`) : coarseSample(fine, index, coarse.mesh.nx)
+    if (fineValue === undefined) throw new Error('The refined mesh does not contain a required coarse-grid coordinate.')
     const difference = fineValue - coarseValues[index]!
     squaredDifference += difference * difference
     squaredReference += fineValue * fineValue

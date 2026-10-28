@@ -48,7 +48,7 @@ function cleanVertices(input: MeshNode[]): MeshNode[] {
   if (vertices.length > 1 && distance(vertices[0]!, vertices[vertices.length - 1]!) <= 1e-12) vertices.pop()
   const xs = vertices.map((point) => point.x)
   const ys = vertices.map((point) => point.y)
-  const scale = Math.max(1, Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys))
+  const scale = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys))
   const tolerance = scale * 1e-10
   for (let index = vertices.length - 1; index >= 0; index -= 1) {
     const previous = vertices[(index - 1 + vertices.length) % vertices.length]!
@@ -81,16 +81,16 @@ export function polygonGeometry(input: MeshNode[]): HeatModel['geometry'] {
   const height = Math.max(...vertices.map((point) => point.y))
   const area = signedPolygonArea(vertices)
   if (!(width > 0) || !(height > 0) || !(area > Math.max(width, height) ** 2 * 1e-16)) throw new Error('The polygon must enclose a nonzero area.')
-  if (width > 1000 || height > 1000 || width < 0.000001 || height < 0.000001) throw new Error('Polygon dimensions must be between 1 μm and 1000 m.')
+  if (width > 1000 || height > 1000 || width < 1e-9 || height < 1e-9) throw new Error('Polygon dimensions must be between 1 nm and 1000 m.')
   return { shape: 'polygon', width, height, vertices, domains: [{ id: 'domain-1', name: 'Domain 1', vertices: vertices.map((vertex) => ({ ...vertex })) }] }
 }
 
-function pointInPolygon(point: MeshNode, vertices: MeshNode[]): boolean {
+function pointInPolygon(point: MeshNode, vertices: MeshNode[], tolerance: number): boolean {
   let inside = false
   for (let index = 0; index < vertices.length; index += 1) {
     const a = vertices[index]!
     const b = vertices[(index + 1) % vertices.length]!
-    if (onSegment(a, b, point, 1e-9)) return false
+    if (onSegment(a, b, point, tolerance)) return false
     if ((a.y > point.y) !== (b.y > point.y) && point.x < (b.x - a.x) * (point.y - a.y) / (b.y - a.y) + a.x) inside = !inside
   }
   return inside
@@ -102,7 +102,11 @@ function samePoint(a: MeshNode, b: MeshNode, tolerance: number): boolean {
 
 /** Rejects overlap and nonconforming partial-edge contacts; identical shared edges are valid interfaces. */
 export function validateDomainLayout(domains: GeometryDomain[]): void {
-  const tolerance = 1e-8
+  const points = domains.flatMap((domain) => domain.vertices)
+  const xs = points.map((point) => point.x)
+  const ys = points.map((point) => point.y)
+  const scale = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys))
+  const tolerance = scale * 1e-9
   for (let left = 0; left < domains.length; left += 1) {
     for (let right = left + 1; right < domains.length; right += 1) {
       const aDomain = domains[left]!
@@ -117,7 +121,7 @@ export function validateDomainLayout(domains: GeometryDomain[]): void {
           const sharedEndpoints = samePoint(a, c, tolerance) || samePoint(a, d, tolerance) || samePoint(b, c, tolerance) || samePoint(b, d, tolerance)
           const identical = (samePoint(a, c, tolerance) && samePoint(b, d, tolerance)) || (samePoint(a, d, tolerance) && samePoint(b, c, tolerance))
           if (identical) continue
-          const collinear = Math.abs(orientation(a, b, c)) <= tolerance && Math.abs(orientation(a, b, d)) <= tolerance
+          const collinear = Math.abs(orientation(a, b, c)) <= tolerance * scale && Math.abs(orientation(a, b, d)) <= tolerance * scale
           if (collinear) {
             const horizontal = Math.abs(b.x - a.x) >= Math.abs(b.y - a.y)
             const overlap = horizontal
@@ -131,7 +135,7 @@ export function validateDomainLayout(domains: GeometryDomain[]): void {
           }
         }
       }
-      if (pointInPolygon(aDomain.vertices[0]!, bDomain.vertices) || pointInPolygon(bDomain.vertices[0]!, aDomain.vertices)) {
+      if (pointInPolygon(aDomain.vertices[0]!, bDomain.vertices, tolerance) || pointInPolygon(bDomain.vertices[0]!, aDomain.vertices, tolerance)) {
         throw new Error(`Domains ${left + 1} and ${right + 1} overlap.`)
       }
     }
@@ -144,7 +148,10 @@ export function multiDomainGeometry(input: GeometryDomain[]): HeatModel['geometr
   if (new Set(input.map((domain) => domain.id)).size !== input.length) throw new Error('Geometry domain ids must be unique.')
   const domains = input.map((domain, index) => ({ id: domain.id, name: domain.name.trim() || `Domain ${index + 1}`, vertices: cleanVertices(domain.vertices) }))
   domains.forEach((domain, index) => {
-    if (signedPolygonArea(domain.vertices) <= 1e-16) throw new Error(`Domain ${index + 1} must enclose a nonzero area.`)
+    const xs = domain.vertices.map((point) => point.x)
+    const ys = domain.vertices.map((point) => point.y)
+    const scale = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys))
+    if (signedPolygonArea(domain.vertices) <= scale ** 2 * 1e-16) throw new Error(`Domain ${index + 1} must enclose a nonzero area.`)
   })
   validateDomainLayout(domains)
   const all = domains.flatMap((domain) => domain.vertices)
@@ -154,8 +161,34 @@ export function multiDomainGeometry(input: GeometryDomain[]): HeatModel['geometr
   const points = shifted.flatMap((domain) => domain.vertices)
   const width = Math.max(...points.map((point) => point.x))
   const height = Math.max(...points.map((point) => point.y))
-  if (width > 1000 || height > 1000 || width < 0.000001 || height < 0.000001) throw new Error('Geometry dimensions must be between 1 μm and 1000 m.')
+  if (width > 1000 || height > 1000 || width < 1e-9 || height < 1e-9) throw new Error('Geometry dimensions must be between 1 nm and 1000 m.')
   return { shape: 'polygon', width, height, vertices: shifted[0]!.vertices, domains: shifted }
+}
+
+/** Scales every domain together, preserving shared edges and domain/material assignments. */
+export function scaleGeometryToBoundingBox(geometry: HeatModel['geometry'], width: number, height: number): HeatModel['geometry'] {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) throw new Error('Bounding-box dimensions must be positive finite numbers.')
+  const scaleX = width / geometry.width
+  const scaleY = height / geometry.height
+  const domains = geometry.domains.map((domain) => ({
+    ...domain,
+    vertices: domain.vertices.map((vertex) => ({ x: vertex.x * scaleX, y: vertex.y * scaleY })),
+  }))
+  if (geometry.shape === 'rectangle' && domains.length === 1) {
+    const scaled = rectangleGeometry(width, height)
+    scaled.domains[0] = { id: domains[0]!.id, name: domains[0]!.name, vertices: scaled.domains[0]!.vertices }
+    return scaled
+  }
+  return multiDomainGeometry(domains)
+}
+
+/** Uses a uniform whole-model scale so an area edit cannot break conforming interfaces. */
+export function scaleGeometryToDomainArea(geometry: HeatModel['geometry'], domainIndex: number, targetArea: number): HeatModel['geometry'] {
+  const domain = geometry.domains[domainIndex]
+  if (!domain) throw new Error('Select a valid geometry domain.')
+  if (!Number.isFinite(targetArea) || targetArea <= 0) throw new Error('Domain area must be a positive finite number.')
+  const scale = Math.sqrt(targetArea / signedPolygonArea(domain.vertices))
+  return scaleGeometryToBoundingBox(geometry, geometry.width * scale, geometry.height * scale)
 }
 
 function parseCsv(source: string): MeshNode[] {

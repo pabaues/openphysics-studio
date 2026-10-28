@@ -1,6 +1,6 @@
-# Comparativa funcional: OpenPhysics Studio 0.9 y COMSOL Multiphysics
+# Comparativa funcional: OpenPhysics Studio 0.10 y COMSOL Multiphysics
 
-Fecha de revisión: 27 de octubre de 2026.
+Fecha de revisión: 28 de octubre de 2026.
 
 ## Alcance y lectura honesta
 
@@ -8,7 +8,7 @@ OpenPhysics Studio es un prototipo comunitario 2D desarrollado mediante ingenier
 
 ## Matriz de diferencias
 
-| Área | COMSOL Multiphysics | OpenPhysics Studio 0.9 | Brecha pendiente |
+| Área | COMSOL Multiphysics | OpenPhysics Studio 0.10 | Brecha pendiente |
 |---|---|---|---|
 | Flujo Model Builder | Geometría, selecciones, materiales, física, malla, estudios y resultados integrados | Árbol integrado, presets, estados obsoletos y validación de esquema | Variables, funciones, unidades y secuencias generales de nodos |
 | Distribución de escritorio | Aplicaciones de escritorio instalables y licencias según producto | Ejecutable portable Windows x64 sin Node.js, publicado y probado por CI en cada push a `main` | Instaladores macOS/Linux, firma de código y actualizador automático |
@@ -17,6 +17,7 @@ OpenPhysics Studio es un prototipo comunitario 2D desarrollado mediante ingenier
 | Materiales | Bibliotecas, anisotropía, no linealidad y propiedades variables | Un material isotrópico por dominio con gradientes espaciales lineales de k, εr y E | Biblioteca, mezclas, anisotropía y dependencia de campo |
 | Transferencia de calor | Mecanismos, condiciones y acoplamientos amplios | Conducción estacionaria/transitoria multidominio, k(x,y), fuente uniforme y selecciones de aristas | Convección, radiación, fase, contacto térmico y fuentes generales |
 | Electrostática | Interfaces amplias de AC/DC y acoplamientos | Potencial estacionario multidominio, εr(x,y), carga uniforme y selecciones de aristas | Corrientes, magnetismo, frecuencia y terminales |
+| Fotónica integrada | Ondas electromagnéticas, óptica y acoplamientos con semiconductores según módulos | Plantillas PIN/PN editables de orden reducido para potencial y campo electrostático | Modos, índice efectivo, desfase, responsividad, deriva–difusión y acoplamiento óptico |
 | Mecánica estructural | No linealidad, contacto, dinámica, vigas, placas y 3D | Elasticidad lineal 2D multidominio, tracciones P1 y desplazamiento normal | Grandes deformaciones, plasticidad, contacto, dinámica y 3D |
 | Acoplamientos | Predefinidos/personalizados, fuertes y débiles | Dilatación térmica–estructural unidireccional estacionaria con propiedades por dominio | Acoplamiento fuerte, iteración multifísica y matrices de bloques |
 | Otras físicas | CFD, acústica, química, electromagnetismo y más | Ecuación escalar de difusión–reacción adicional | Fluidos, ondas, reacciones y demás interfaces |
@@ -41,6 +42,10 @@ OpenPhysics Studio es un prototipo comunitario 2D desarrollado mediante ingenier
 3. **Adaptación y verificación.** Recuperación de gradiente, marcado, bisección conforme y errores frente a soluciones manufacturadas.
 4. **Kernels y solvers.** Producto escalar WASM reproducible, RCM e IC(0), contrastados con variantes de referencia.
 5. **API y ecuación propia.** Entrada pública `src/lib/openphysics.ts`, build ES/declaraciones y física escalar `−∇·(c∇u)+au=f`.
+
+## Mejora incorporada en 0.10
+
+**Plantillas fotónicas editables y geometría nanométrica.** Se añaden secciones PIN y PN de silicio con tres dominios conformes, materiales por región, potenciales terminales, malla, convergencia, adaptación, barridos y exportación. Bounding box y área activa son editables en cualquier geometría; los helpers también están en la API pública. Las tolerancias numéricas geométricas se escalan con el modelo y la convergencia multidominio compara coordenadas anidadas. Estas plantillas resuelven únicamente electrostática reducida: no proporcionan modos ópticos, responsividad, deriva–difusión, índice efectivo ni desfase óptico. Consulta `docs/photonics.md`.
 
 ## Mejora incorporada en 0.9
 

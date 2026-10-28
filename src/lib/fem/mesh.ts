@@ -79,7 +79,7 @@ export function createPolygonMesh(vertices: MeshNode[], refinement = 1): Mesh {
     const triangle = positiveTriangle(nodes, [indices[index]!, indices[index + 1]!, indices[index + 2]!])
     const [a, b, c] = triangle.map((node) => nodes[node]!)
     const area = Math.abs((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)) / 2
-    if (area > Math.max(1, Math.abs(signedPolygonArea(vertices))) * 1e-14) triangles.push(triangle)
+    if (area > Math.abs(signedPolygonArea(vertices)) * 1e-14) triangles.push(triangle)
   }
   const width = Math.max(...nodes.map((node) => node.x)) - Math.min(...nodes.map((node) => node.x))
   const height = Math.max(...nodes.map((node) => node.y)) - Math.min(...nodes.map((node) => node.y))
@@ -95,7 +95,7 @@ export function createMultidomainMesh(model: HeatModel, extraRefinement = 0): Me
   const triangles: Triangle[] = []
   const triangleDomains: number[] = []
   const shared = new Map<string, number>()
-  const tolerance = Math.max(1, model.geometry.width, model.geometry.height) * 1e-9
+  const tolerance = Math.max(model.geometry.width, model.geometry.height) * 1e-9
   const key = (node: MeshNode) => `${Math.round(node.x / tolerance)}:${Math.round(node.y / tolerance)}`
   model.geometry.domains.forEach((domain, domainIndex) => {
     const local = createPolygonMesh(domain.vertices, refinement)

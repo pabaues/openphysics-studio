@@ -58,6 +58,8 @@ export type SweepParameter =
   | 'material.youngsModulus'
   | 'physics.heatSource'
   | 'electrostatics.chargeDensity'
+  | 'electrostatics.leftVoltage'
+  | 'electrostatics.rightVoltage'
 
 export interface HeatModel {
   schemaVersion: 8

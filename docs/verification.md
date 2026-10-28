@@ -81,15 +81,26 @@ El módulo WASM se genera de forma reproducible desde `dot.wat`, se instancia s�
 - **Validación geométrica.** Se rechazan solapamientos, contactos parciales de arista y uniones en T; se permiten regiones disjuntas y contactos por vértices.
 - **Adaptación y persistencia.** La bisección local conserva etiquetas y áreas por dominio. El esquema v8 conserva asignaciones y materiales, y exige material para cada dominio.
 
+## Plantillas fotónicas nanométricas
+
+`src/lib/fem/presets.test.ts` verifica las secciones PIN y PN de silicio mediante ocho casos:
+
+- Validación del esquema v8, tres dominios conformes y materiales asignados.
+- Solución electrostática analítica afín: `V = Vₗ + (Vᵣ−Vₗ)x/L` y `Eₓ = −(Vᵣ−Vₗ)/L`, con comprobación nodal y elemental.
+- Escalado independiente del bounding box y escalado uniforme desde el área activa, conservando identificadores, interfaces y materiales.
+- Barridos de potencial sin mutación del modelo base y secuencias de convergencia R0→R1→R2. Como el campo afín ya pertenece a P1, se comprueba el suelo numérico y no se exige una reducción artificial del error.
+
+Las tolerancias geométricas, de triangulación, unión de nodos y detección de frontera son relativas al tamaño del modelo para admitir dimensiones nanométricas. La comparación de mallas no estructuradas usa coordenadas físicas anidadas: los índices globales multidominio pueden cambiar al insertar nodos por dominio y no son una correspondencia válida por sí solos. Estas pruebas verifican electrostática, no propagación óptica ni transporte de portadores.
+
 ## Geometría, persistencia y navegador
 
 La suite también comprueba importación/normalización SVG/CSV, rechazo de auto-intersecciones, refinamiento rojo, campos afines en mallas no estructuradas, integración P1, sondas, barridos y exportadores. `project.test.ts` recorre migraciones aditivas v1→v8, incluida v7→v8, firmas estables y validación geométrica.
 
-El ensayo de navegador cubre Worker, invalidación de respuestas obsoletas, ambos solvers, IC(0), RCM/natural, ecuación personalizada, error exacto, adaptación, transitorios, polígonos, geometría multidominio conectada y disjunta, edición de materiales por dominio, elasticidad, barridos y descargas. Las capturas se guardan fuera del repositorio y el servidor temporal se detiene.
+El ensayo de navegador cubre Worker, invalidación de respuestas obsoletas, ambos solvers, IC(0), RCM/natural, ecuación personalizada, error exacto, adaptación, transitorios, polígonos, geometría multidominio conectada y disjunta, edición de materiales por dominio, elasticidad, barridos y descargas. En PIN y PN edita nombre de dominio, bounding box, área activa, permitividad y potencial; después recalcula, ejecuta convergencia y realiza un barrido de polarización. Las capturas se guardan fuera del repositorio y el servidor temporal se detiene.
 
 ## Aplicación de escritorio y release
 
-`desktop/main.cjs` carga exclusivamente los archivos locales compilados, con Node Integration desactivado, aislamiento de contexto y sandbox. `scripts/validate-desktop.mjs` abre la aplicación mediante Electron, comprueba versión y modo empaquetado, ejecuta un cálculo en el Worker y carga el preset multidominio. La prueba se ejecuta también contra el binario empaquetado antes de publicar cada release.
+`desktop/main.cjs` carga exclusivamente los archivos locales compilados, con Node Integration desactivado, aislamiento de contexto y sandbox. `scripts/validate-desktop.mjs` abre la aplicación mediante Electron, comprueba versión y modo empaquetado, ejecuta cálculos en el Worker, carga el preset multidominio y edita/recalcula la plantilla PIN. La prueba se ejecuta también contra el binario empaquetado antes de publicar cada release.
 
 El workflow de GitHub Actions separa la verificación y el empaquetado Windows. Solo un push a `main` cuya verificación haya pasado puede actualizar la release continua `latest`; los pull requests no la modifican. La concurrencia cancela builds obsoletos de una misma rama para evitar que un push anterior sobrescriba otro más reciente. El nombre estable `OpenPhysics-Studio-Windows-x64.exe` permite reemplazar siempre el mismo asset, junto con su checksum SHA-256, sin acumular ejecutables antiguos en la release continua.
 

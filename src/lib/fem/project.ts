@@ -192,6 +192,12 @@ const v8ModelObject = v7ModelObject.extend({
     vertices: z.array(vertexSchema).min(3).max(256), domains: z.array(domainSchema).min(1).max(16),
   }),
   domainMaterials: z.record(z.string(), materialV8Schema),
+  sweep: v7ModelObject.shape.sweep.extend({
+    parameter: z.enum([
+      'geometry.width', 'geometry.height', 'material.conductivity', 'material.relativePermittivity', 'material.youngsModulus',
+      'physics.heatSource', 'electrostatics.chargeDensity', 'electrostatics.leftVoltage', 'electrostatics.rightVoltage',
+    ]),
+  }),
 })
 
 export const heatModelSchema = v8ModelObject.superRefine((model, context) => {

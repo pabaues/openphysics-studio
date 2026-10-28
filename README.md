@@ -20,6 +20,13 @@ OpenPhysics Studio is a clean-room, open-source multiphysics workbench. It runs 
 - Uniform space-charge density, fixed potential and zero-charge/symmetry conditions.
 - Named and arbitrary-edge conditions; potential, field magnitude and vector output.
 
+### Integrated photonics templates
+
+- Editable **Si PIN photodetector** and **high-density Si PN modulator** cross-sections with three conforming silicon domains.
+- Parametric global bounding box, active-domain area, domain names, per-domain materials, terminal potentials and mesh controls.
+- Ready-to-run bias sweeps, mesh convergence, adaptive studies and open-format exports; also available through `createExampleModel` in the TypeScript API.
+- These are reduced-order electrostatic templates: they solve `V` and `E`, but do not compute optical modes, responsivity, drift–diffusion current, effective index or optical phase shift. See [dimensions, editing workflow and physical limits](docs/photonics.md).
+
 ### Linear Elasticity
 
 - Small-strain isotropic plane stress and plane strain with spatially linear Young’s modulus.
@@ -41,7 +48,8 @@ OpenPhysics Studio is a clean-room, open-source multiphysics workbench. It runs 
 
 ### Geometry, domains and meshing
 
-- Parametric rectangles, simple 2D polygons and up to 16 independent polygon domains, including concave boundaries.
+- Parametric rectangles, simple 2D polygons and up to 16 independent polygon domains, including concave boundaries and dimensions down to 1 nm.
+- Editable global bounding box and active-domain area for every geometry; whole-model scaling preserves domain/material assignments and conforming interfaces.
 - Conforming multidomain meshes: matching full edges become continuous interfaces with shared nodes; disconnected regions and vertex-only contacts are supported.
 - Per-domain isotropic materials for heat, electrostatics, transient studies, elasticity and one-way thermal coupling.
 - CSV coordinates and SVG polygon/polyline/linear-path import; M/L/H/V/Z commands. Import currently creates one polygon.
@@ -149,7 +157,7 @@ npm run test:ui
 npm run test:desktop  # Windows; validates startup and a real computation
 ```
 
-The UI check starts a temporary server on port 7101, drives Chrome or Edge through both solver families, Web Worker execution, stale-response invalidation, thermal/transient/electrostatic/structural/custom workflows, manufactured convergence, adaptation, IC(0), polygon import, connected/disconnected multidomain editing, per-domain materials, sweeps and downloads. It saves screenshots outside the repository and stops the server. Set `CHROME_PATH` or `UI_TEST_PORT` when needed.
+The UI check starts a temporary server on port 7101, drives Chrome or Edge through both solver families, Web Worker execution, stale-response invalidation, thermal/transient/electrostatic/structural/custom workflows, manufactured convergence, adaptation, IC(0), polygon import, connected/disconnected multidomain editing, per-domain materials, both editable photonic templates, convergence, bias sweeps and downloads. It saves screenshots outside the repository and stops the server. Set `CHROME_PATH` or `UI_TEST_PORT` when needed.
 
 See [verification models, analytical benchmarks and tolerances](docs/verification.md) for the exact verification contract.
 

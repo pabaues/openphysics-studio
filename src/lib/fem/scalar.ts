@@ -38,7 +38,7 @@ export interface ScalarAssembly {
 }
 
 export function near(a: number, b: number, scale: number): boolean {
-  return Math.abs(a - b) <= Math.max(1, scale) * 1e-10
+  return Math.abs(a - b) <= Math.max(Math.abs(scale), Number.MIN_VALUE) * 1e-10
 }
 
 export function triangleGeometry(mesh: Mesh, triangle: Triangle) {

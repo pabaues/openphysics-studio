@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Download, FileJson, FileText, FileUp, Info, LoaderCircle, Play, ShieldCheck, TrendingUp } from 'lucide-react'
 import type { NodeId } from './ModelTree'
-import { multiDomainGeometry, rectangleGeometry, signedPolygonArea } from '@/lib/fem/geometry'
+import { multiDomainGeometry, rectangleGeometry, scaleGeometryToBoundingBox, scaleGeometryToDomainArea, signedPolygonArea } from '@/lib/fem/geometry'
 import { boundaryOverrideKey } from '@/lib/fem/boundary'
 import { materialForDomain } from '@/lib/fem/properties'
 import { near } from '@/lib/fem/scalar'
@@ -160,6 +160,7 @@ export function Inspector({ model, selected, result, stale, converging, onChange
   const isElectricBoundary = selected.startsWith('electric')
   const isStructuralBoundary = selected.startsWith('structural')
   const isPolygon = model.geometry.shape === 'polygon'
+  const isPhotonicTemplate = activeDomain.id.startsWith('domain-pin-') || activeDomain.id.startsWith('domain-mod-')
   const resultName = result?.physics === 'electrostatics' ? 'potential' : result?.physics === 'elasticity' ? 'displacement' : result?.physics === 'custom' ? 'scalar field' : 'temperature'
   const finestDivisions = Math.max(model.mesh.nx, model.mesh.ny) * 2 ** (model.convergence.levels - 1)
   const baseRefinement = model.mesh.refinement ?? 1
@@ -178,16 +179,17 @@ export function Inspector({ model, selected, result, stale, converging, onChange
       <div className="inspector-scroll">
         {selected === 'geometry' && <Section eyebrow="Geometry sequence" title={model.geometry.domains.length > 1 ? `${model.geometry.domains.length} geometry domains` : isPolygon ? 'Simple polygon' : 'Parametric rectangle'} description="Independent polygon domains share nodes only across complete matching edges.">
           <label className="field-label"><span>Active domain</span><select aria-label="Active domain" value={domainIndex} onChange={(event) => setSelectedDomain(Number(event.target.value))}>{model.geometry.domains.map((domain, index) => <option key={domain.id} value={index}>{domain.name}</option>)}</select></label>
-          {!isPolygon && model.geometry.domains.length === 1 && <>
-            <NumberField label="Width" value={model.geometry.width} unit="m" min={0.001} max={1000} step={0.01} onChange={(width) => onChange({ ...model, geometry: rectangleGeometry(width, model.geometry.height) })} />
-            <NumberField label="Height" value={model.geometry.height} unit="m" min={0.001} max={1000} step={0.01} onChange={(height) => onChange({ ...model, geometry: rectangleGeometry(model.geometry.width, height) })} />
-          </>}
-          {isPolygon && <>
-            <div className="property-row"><span>Domain vertices</span><strong>{activeDomain.vertices.length}</strong></div>
-            <div className="property-row"><span>Global bounding box</span><strong>{model.geometry.width.toPrecision(4)} × {model.geometry.height.toPrecision(4)} m</strong></div>
-            <div className="property-row"><span>Active domain area</span><strong>{signedPolygonArea(activeDomain.vertices).toPrecision(5)} m²</strong></div>
-            {model.geometry.domains.length === 1 && <button className="export-button" onClick={() => onChange({ ...model, geometry: rectangleGeometry(model.geometry.width, model.geometry.height) })}>Use parametric rectangle</button>}
-          </>}
+          <label className="field-label"><span>Active domain name</span><input aria-label="Active domain name" className="text-field" value={activeDomain.name} maxLength={80} onChange={(event) => {
+            const domains = model.geometry.domains.map((domain, index) => index === domainIndex ? { ...domain, name: event.target.value } : domain)
+            onChange({ ...model, geometry: { ...model.geometry, domains } })
+          }} /></label>
+          <NumberField label="Global bounding box width" value={model.geometry.width} unit="m" min={1e-9} max={1000} step={1e-6} onChange={(width) => onChange({ ...model, geometry: scaleGeometryToBoundingBox(model.geometry, width, model.geometry.height) })} />
+          <NumberField label="Global bounding box height" value={model.geometry.height} unit="m" min={1e-9} max={1000} step={1e-6} onChange={(height) => onChange({ ...model, geometry: scaleGeometryToBoundingBox(model.geometry, model.geometry.width, height) })} />
+          <NumberField label="Active domain area" value={signedPolygonArea(activeDomain.vertices)} unit="m²" min={1e-24} max={1e6} step={1e-12} onChange={(area) => onChange({ ...model, geometry: scaleGeometryToDomainArea(model.geometry, domainIndex, area) })} />
+          <div className="property-row"><span>Domain vertices</span><strong>{activeDomain.vertices.length}</strong></div>
+          {isPolygon && model.geometry.domains.length === 1 && <button className="export-button" onClick={() => onChange({ ...model, geometry: rectangleGeometry(model.geometry.width, model.geometry.height) })}>Use parametric rectangle</button>}
+          <div className="solver-note neutral"><Info size={16} /><span>Area edits scale the whole model uniformly to preserve conforming interfaces. Bounding-box edits scale all domains in X and Y.</span></div>
+          {isPhotonicTemplate && <div className="solver-note neutral"><Info size={16} /><span>Reduced-order electrostatic template: p/i/n labels describe geometry only; optical propagation and carrier transport are not solved.</span></div>}
           <button className="study-button" disabled={model.geometry.domains.length >= 16} onClick={addDomain}>Add disconnected rectangle domain</button>
           <button className="export-button" disabled={model.geometry.domains.length === 1} onClick={removeDomain}>Remove active domain</button>
           {geometryImport}
@@ -231,6 +233,7 @@ export function Inspector({ model, selected, result, stale, converging, onChange
           <div className="equation-box primary">∇ · (−ε∇V) = ρ</div>
           <NumberField label="Space charge ρ" value={model.electrostatics.chargeDensity} unit="C/m³" min={-1e6} max={1e6} step={1e-9} onChange={(chargeDensity) => updateElectric({ chargeDensity })} />
           <div className="property-row"><span>Permittivity</span><strong>ε = εᵣε₀</strong></div><div className="property-row"><span>Derived quantity</span><strong>E = −∇V</strong></div>
+          {isPhotonicTemplate && <div className="solver-note neutral"><Info size={16} /><span>This template solves only the biased cross-section. It does not compute optical modes, responsivity, drift–diffusion current, effective index, or optical phase shift.</span></div>}
           <EdgeBoundaryEditor model={model} physics="electrostatics" onChange={onChange} />
         </Section>}
 
@@ -300,14 +303,14 @@ export function Inspector({ model, selected, result, stale, converging, onChange
         </Section>}
 
         {selected === 'sweep' && <Section eyebrow="Study 1 · Automation" title="Parametric sweep" description="Solve independent model copies for 2–12 values and compare derived quantities.">
-          <label className="field-label"><span>Parameter</span><select aria-label="Sweep parameter" value={model.sweep.parameter} onChange={(event) => onChange({ ...model, sweep: { ...model.sweep, parameter: event.target.value as SweepParameter } })}>{Object.entries(sweepParameters).filter(([parameter, metadata]) => (!isPolygon || !parameter.startsWith('geometry.')) && (metadata.physics === 'both' || metadata.physics === model.activePhysics)).map(([parameter, metadata]) => <option key={parameter} value={parameter}>{metadata.label}</option>)}</select></label>
+          <label className="field-label"><span>Parameter</span><select aria-label="Sweep parameter" value={model.sweep.parameter} onChange={(event) => onChange({ ...model, sweep: { ...model.sweep, parameter: event.target.value as SweepParameter } })}>{Object.entries(sweepParameters).filter(([, metadata]) => metadata.physics === 'both' || metadata.physics === model.activePhysics).map(([parameter, metadata]) => <option key={parameter} value={parameter}>{metadata.label}</option>)}</select></label>
           <label className="field-label"><span>Values · comma separated</span><input key={`${model.sweep.parameter}-${model.sweep.values.join(',')}`} aria-label="Sweep values" className="text-field" defaultValue={model.sweep.values.join(', ')} onBlur={(event) => {
             const values = event.target.value.split(',').map((value) => Number(value.trim())).filter((value) => Number.isFinite(value))
             onChange({ ...model, sweep: { ...model.sweep, values } })
           }} /></label>
           <div className="property-row"><span>Selected parameter</span><strong>{sweepParameters[model.sweep.parameter].unit || 'dimensionless'}</strong></div>
-          <button className="study-button" disabled={converging || (isPolygon && model.activePhysics === 'custom')} onClick={onRunSweep}><Play size={15} />Run parametric sweep</button>
-          <div className="solver-note neutral"><ShieldCheck size={16} /><span>{isPolygon && model.activePhysics === 'custom' ? 'Custom scalar physics currently exposes only geometry parameters for sweeps, so polygon sweeps are unavailable.' : isPolygon ? 'Bounding-box sweeps are unavailable for polygons; material and physics parameters remain available.' : 'Every case is schema-validated and solved independently. Select a result row to inspect its field.'}</span></div>
+          <button className="study-button" disabled={converging} onClick={onRunSweep}><Play size={15} />Run parametric sweep</button>
+          <div className="solver-note neutral"><ShieldCheck size={16} /><span>Every case is schema-validated and solved independently. Geometry sweeps preserve all domains and conforming interfaces; select a result row to inspect its field.</span></div>
         </Section>}
 
         {selected === 'convergence' && <Section eyebrow="Study 1 · Automation" title="Mesh convergence" description="Halve the element size at every level and estimate self-convergence from successive solutions.">

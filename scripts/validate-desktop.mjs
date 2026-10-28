@@ -15,7 +15,7 @@ let application
 try {
   application = await electron.launch({
     executablePath: executablePath || path.join(root, 'node_modules/electron/dist/electron.exe'),
-    args: executablePath ? [] : ['.'],
+    args: [...(executablePath ? [] : ['.']), `--user-data-dir=${path.join(output, `desktop-profile-${process.pid}`)}`],
     cwd: root,
     env: environment,
     timeout: 120000,
@@ -46,11 +46,19 @@ try {
   await page.getByLabel('Example model').selectOption('composite')
   await page.waitForFunction(() => document.querySelector('.document-name')?.value === 'Two-material composite plate' && !document.querySelector('.outdated-label'), { timeout: 60000 })
   await page.locator('.ribbon-button').filter({ hasText: 'Geometry' }).click()
-  assert.equal(await page.getByLabel('Active domain').locator('option').count(), 2)
+  assert.equal(await page.getByLabel('Active domain', { exact: true }).locator('option').count(), 2)
   await page.screenshot({ path: path.join(output, 'openphysics-desktop-app.png'), fullPage: true })
+  await page.getByLabel('Example model').selectOption('pinPhotodetector')
+  await page.waitForFunction(() => document.querySelector('.document-name')?.value === 'Si PIN photodetector · reverse-bias cross-section' && !document.querySelector('.outdated-label'), { timeout: 60000 })
+  await page.locator('.ribbon-button').filter({ hasText: 'Geometry' }).click()
+  assert.equal(await page.getByLabel('Active domain', { exact: true }).locator('option').count(), 3)
+  await page.getByLabel('Global bounding box width').fill('0.000004')
+  await page.locator('.compute-button').click()
+  await page.waitForFunction(() => !document.querySelector('.outdated-label'), { timeout: 60000 })
+  await page.screenshot({ path: path.join(output, 'openphysics-desktop-photonics.png'), fullPage: true })
   assert.deepEqual(errors, [], `Desktop browser errors:\n${errors.join('\n')}`)
-  console.log(`Desktop validation passed (${metadata.packaged ? 'packaged executable' : 'unpacked application'}, version ${metadata.version}).`)
-  console.log(`Screenshot: ${path.join(output, 'openphysics-desktop-app.png')}`)
+  console.log(`Desktop validation passed (${metadata.packaged ? 'packaged executable' : 'unpacked application'}, version ${metadata.version}), including the editable PIN template.`)
+  console.log(`Screenshots: ${path.join(output, 'openphysics-desktop-app.png')}, ${path.join(output, 'openphysics-desktop-photonics.png')}`)
 } finally {
   if (application) await application.close()
 }

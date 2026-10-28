@@ -26,12 +26,14 @@ describe('parametric sweeps', () => {
     expect(() => runParametricSweep(model)).toThrow(/does not affect/)
   })
 
-  it('rejects bounding-box sweeps on polygons but permits material parameters', () => {
+  it('scales polygon bounding boxes and permits material parameters', () => {
     const model = structuredClone(defaultModel)
     model.geometry = polygonGeometry([{ x: 0, y: 0 }, { x: 0.2, y: 0 }, { x: 0.2, y: 0.1 }, { x: 0, y: 0.1 }])
     model.mesh = { nx: 4, ny: 4, refinement: 0 }
     model.sweep = { parameter: 'geometry.width', values: [0.1, 0.2] }
-    expect(() => runParametricSweep(model)).toThrow(/Bounding-box sweeps/)
+    const geometryReport = runParametricSweep(model)
+    expect(geometryReport.cases.map((entry) => entry.result.mesh.width)).toEqual([0.1, 0.2])
+    expect(geometryReport.cases.every((entry) => entry.result.converged)).toBe(true)
     model.sweep = { parameter: 'material.conductivity', values: [15, 45] }
     expect(runParametricSweep(model).cases).toHaveLength(2)
   })
