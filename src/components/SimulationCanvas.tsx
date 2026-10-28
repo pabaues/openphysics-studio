@@ -1,10 +1,12 @@
-import { AlertTriangle, Box, Grid3X3, Maximize2 } from 'lucide-react'
+import { useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { AlertTriangle, Box, Grid3X3, Maximize2, ZoomIn, ZoomOut } from 'lucide-react'
 import { createModelMesh } from '@/lib/fem/mesh'
 import { resultValues } from '@/lib/fem/study'
 import type { AnySimulationResult, HeatModel } from '@/lib/fem/types'
 
 export type ViewMode = 'geometry' | 'mesh' | 'results'
 export type ResultQuantity = 'temperature' | 'flux' | 'potential' | 'electricField' | 'displacement' | 'vonMises' | 'custom' | 'customGradient'
+export type BoundarySide = 'left' | 'right' | 'top' | 'bottom'
 
 interface SimulationCanvasProps {
   model: HeatModel
@@ -13,6 +15,9 @@ interface SimulationCanvasProps {
   quantity: ResultQuantity
   showMesh: boolean
   stale: boolean
+  selectedDomain: number
+  onSelectDomain: (index: number) => void
+  onSelectBoundary: (boundary: BoundarySide) => void
 }
 
 const WIDTH = 900
@@ -35,7 +40,13 @@ function scientific(value: number): string {
   return Math.abs(value) >= 10000 || Math.abs(value) < 0.01 ? value.toExponential(2) : value.toFixed(2)
 }
 
-export function SimulationCanvas({ model, result, view, quantity, showMesh, stale }: SimulationCanvasProps) {
+export function SimulationCanvas({ model, result, view, quantity, showMesh, stale, selectedDomain, onSelectDomain, onSelectBoundary }: SimulationCanvasProps) {
+  const [zoom, setZoom] = useState(1)
+  const zoomWidth = WIDTH / zoom
+  const zoomHeight = HEIGHT / zoom
+  const activate = (event: ReactKeyboardEvent<SVGGElement>, action: () => void) => {
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); action() }
+  }
   const domain = view === 'results' && result ? result.mesh : model.geometry
   const scale = Math.min(680 / domain.width, 350 / domain.height)
   const originX = (WIDTH - domain.width * scale) / 2 - 35
@@ -70,7 +81,7 @@ export function SimulationCanvas({ model, result, view, quantity, showMesh, stal
         : nodal ? 'Temperature field' : 'Heat flux magnitude'
 
   return <div className="canvas-wrap">
-    <svg className="simulation-canvas" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} role="img" aria-label={`${view} visualization`}>
+    <svg className="simulation-canvas" viewBox={`${(WIDTH - zoomWidth) / 2} ${(HEIGHT - zoomHeight) / 2} ${zoomWidth} ${zoomHeight}`} role="img" aria-label={`${view} visualization`}>
       <defs>
         <pattern id="smallGrid" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M 24 0 L 0 0 0 24" fill="none" stroke="#e8edf3" strokeWidth="0.7" /></pattern>
         <linearGradient id="colorScale" x1="0" x2="0" y1="1" y2="0">{COLORS.map((color, index) => <stop key={color} offset={`${(index / (COLORS.length - 1)) * 100}%`} stopColor={color} />)}</linearGradient>
@@ -81,23 +92,24 @@ export function SimulationCanvas({ model, result, view, quantity, showMesh, stal
       <text x="830" y="460" className="axis-label">x</text><text x="48" y="45" className="axis-label">y</text>
 
       {view === 'geometry' && <g>
-        {model.geometry.domains.map((domain, domainIndex) => <g key={domain.id}>
-          <polygon points={domain.vertices.map((point) => `${px(point.x)},${py(point.y)}`).join(' ')} fill={domainIndex % 2 === 0 ? '#dcecff' : '#e8e1ff'} stroke={domainIndex % 2 === 0 ? '#3b82f6' : '#8b5cf6'} strokeWidth="2" strokeLinejoin="round" />
-          {domain.vertices.map((point, index) => <circle key={index} cx={px(point.x)} cy={py(point.y)} r="4" fill="#fff" stroke="#2563eb" strokeWidth="2" />)}
-          <text x={px(domain.vertices.reduce((sum, point) => sum + point.x, 0) / domain.vertices.length)} y={py(domain.vertices.reduce((sum, point) => sum + point.y, 0) / domain.vertices.length)} className="domain-label">{domain.name}</text>
+        {model.geometry.domains.map((item, domainIndex) => <g key={item.id} className={`domain-selection ${selectedDomain === domainIndex ? 'selected' : ''}`} role="button" tabIndex={0} aria-label={`Select ${item.name}`} onClick={() => onSelectDomain(domainIndex)} onKeyDown={(event) => activate(event, () => onSelectDomain(domainIndex))}>
+          <polygon points={item.vertices.map((point) => `${px(point.x)},${py(point.y)}`).join(' ')} fill={domainIndex % 2 === 0 ? '#dcecff' : '#e8e1ff'} stroke={selectedDomain === domainIndex ? '#1d4ed8' : domainIndex % 2 === 0 ? '#3b82f6' : '#8b5cf6'} strokeWidth={selectedDomain === domainIndex ? 3 : 2} strokeLinejoin="round" />
+          {item.vertices.map((point, index) => <circle key={index} cx={px(point.x)} cy={py(point.y)} r="4" fill="#fff" stroke="#2563eb" strokeWidth="2" />)}
+          <text x={px(item.vertices.reduce((sum, point) => sum + point.x, 0) / item.vertices.length)} y={py(item.vertices.reduce((sum, point) => sum + point.y, 0) / item.vertices.length)} className="domain-label">{item.name}</text>
+          <title>Select {item.name} to edit its geometry</title>
         </g>)}
       </g>}
 
       {(view === 'mesh' || view === 'results') && mesh && <g>
-        {structural && view === 'results' && model.geometry.domains.map((domain) => <polygon key={domain.id} points={domain.vertices.map((point) => `${px(point.x)},${py(point.y)}`).join(' ')} fill="none" stroke="#94a3b8" strokeDasharray="5 4" strokeWidth="1" />)}
+        {structural && view === 'results' && model.geometry.domains.map((item) => <polygon key={item.id} points={item.vertices.map((point) => `${px(point.x)},${py(point.y)}`).join(' ')} fill="none" stroke="#94a3b8" strokeDasharray="5 4" strokeWidth="1" />)}
         {mesh.triangles.map((triangle, index) => {
           const points = triangle.map((node) => { const point = displayPoint(node); return `${px(point.x)},${py(point.y)}` }).join(' ')
           const value = view === 'results' && values ? nodal ? triangle.reduce((sum, node) => sum + values[node]!, 0) / 3 : values[index]! : 0
           const fill = view === 'results' ? colorAt(value, min, max) : '#f8fbff'
-          const domain = mesh.triangleDomains?.[index] ?? 0
-          return <polygon key={index} points={points} fill={fill} stroke={view === 'mesh' || showMesh ? '#64748b' : fill} strokeWidth={view === 'mesh' ? 0.75 : showMesh ? 0.45 : 0.15}><title>{view === 'results' ? `${model.geometry.domains[domain]?.name ?? `Domain ${domain + 1}`} · ${fieldName}: ${scientific(value)} ${unit}` : `Domain ${domain + 1} · Triangle ${index + 1}`}</title></polygon>
+          const triangleDomain = mesh.triangleDomains?.[index] ?? 0
+          return <polygon key={index} points={points} fill={fill} stroke={view === 'mesh' || showMesh ? '#64748b' : fill} strokeWidth={view === 'mesh' ? 0.75 : showMesh ? 0.45 : 0.15}><title>{view === 'results' ? `${model.geometry.domains[triangleDomain]?.name ?? `Domain ${triangleDomain + 1}`} · ${fieldName}: ${scientific(value)} ${unit}` : `Domain ${triangleDomain + 1} · Triangle ${index + 1}`}</title></polygon>
         })}
-        {!structural && model.geometry.domains.map((domain) => <polygon key={domain.id} points={domain.vertices.map((point) => `${px(point.x)},${py(point.y)}`).join(' ')} fill="none" stroke="#334155" strokeWidth="1.4" strokeLinejoin="round" />)}
+        {!structural && model.geometry.domains.map((item) => <polygon key={item.id} points={item.vertices.map((point) => `${px(point.x)},${py(point.y)}`).join(' ')} fill="none" stroke="#334155" strokeWidth="1.4" strokeLinejoin="round" />)}
         {view === 'results' && quantity !== 'vonMises' && quantity !== 'displacement' && !nodal && vectors.map((vector, index) => {
           if (index % Math.max(1, Math.floor(vectors.length / 45)) !== 0) return null
           const triangle = mesh.triangles[index]!
@@ -115,9 +127,20 @@ export function SimulationCanvas({ model, result, view, quantity, showMesh, stal
       {structural && view === 'results' && <text x={px(domain.width / 2)} y={py(0) + 46} className="scale-text">Deformed shape · automatic scale ×{scientific(deformationScale)}</text>}
       <text x={px(domain.width / 2)} y={py(domain.height) - 18} className="boundary-text top">TOP</text><text x={px(domain.width / 2)} y={py(0) + 20} className="boundary-text">BOTTOM</text>
       <text x={px(0) + 10} y={py(domain.height / 2)} className="boundary-text" transform={`rotate(-90 ${px(0) + 10} ${py(domain.height / 2)})`}>LEFT</text><text x={px(domain.width) - 10} y={py(domain.height / 2)} className="boundary-text" transform={`rotate(90 ${px(domain.width) - 10} ${py(domain.height / 2)})`}>RIGHT</text>
+      {([
+        { side: 'top' as const, x: px(0), y: py(domain.height) - 12, width: domain.width * scale, height: 24 },
+        { side: 'bottom' as const, x: px(0), y: py(0) - 12, width: domain.width * scale, height: 24 },
+        { side: 'left' as const, x: px(0) - 12, y: py(domain.height), width: 24, height: domain.height * scale },
+        { side: 'right' as const, x: px(domain.width) - 12, y: py(domain.height), width: 24, height: domain.height * scale },
+      ]).map((boundary) => <g key={boundary.side} className="boundary-hit" role="button" tabIndex={0} aria-label={`Edit ${boundary.side} boundary`} onClick={() => onSelectBoundary(boundary.side)} onKeyDown={(event) => activate(event, () => onSelectBoundary(boundary.side))}><rect {...boundary} fill="transparent" /><title>Edit {boundary.side} boundary condition</title></g>)}
     </svg>
-    <div className="viewport-label">{view === 'geometry' ? <Box size={14} /> : <Grid3X3 size={14} />}{view === 'geometry' ? 'Geometry 1' : view === 'mesh' ? 'Mesh 1' : fieldName}</div>
-    <button className="viewport-expand" title="Fit view"><Maximize2 size={15} /></button>
+    <div className="viewport-label">{view === 'geometry' ? <Box size={14} /> : <Grid3X3 size={14} />}{view === 'geometry' ? 'Geometry 1 · click a domain to edit' : view === 'mesh' ? 'Mesh 1' : fieldName}</div>
+    <div className="viewport-controls" aria-label="Graphics view controls">
+      <button title="Zoom out" aria-label="Zoom out" disabled={zoom <= 1} onClick={() => setZoom((value) => Math.max(1, value / 1.25))}><ZoomOut size={15} /></button>
+      <span aria-live="polite">{Math.round(zoom * 100)}%</span>
+      <button title="Zoom in" aria-label="Zoom in" disabled={zoom >= 4} onClick={() => setZoom((value) => Math.min(4, value * 1.25))}><ZoomIn size={15} /></button>
+      <button title="Fit view" aria-label="Fit view" onClick={() => setZoom(1)}><Maximize2 size={15} /></button>
+    </div>
     {stale && view === 'results' && <div className="stale-banner"><AlertTriangle size={14} />Parameters changed — compute to update</div>}
   </div>
 }

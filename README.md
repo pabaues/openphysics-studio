@@ -78,6 +78,13 @@ OpenPhysics Studio is a clean-room, open-source multiphysics workbench. It runs 
 
 All models and results stay on the local machine. No backend is required.
 
+## Interactive workbench
+
+- Workflow tabs for Home, Geometry, Materials, Physics, Mesh, Study and Results expose only commands implemented by the current workbench.
+- A collapsible Model Builder, shared domain selection and a COMSOL-style Model Builder → Settings → Graphics layout keep the active context visible.
+- Click a domain in Geometry to edit its dimensions and material assignments; click a named boundary in Graphics to open its current physics settings.
+- Accessible keyboard selection, functional zoom in/out/fit controls, responsive panels and live status messages support mouse and keyboard workflows.
+
 ## Run
 
 Requires Node.js 20 or later.

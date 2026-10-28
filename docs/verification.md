@@ -96,7 +96,7 @@ Las tolerancias geométricas, de triangulación, unión de nodos y detección de
 
 La suite también comprueba importación/normalización SVG/CSV, rechazo de auto-intersecciones, refinamiento rojo, campos afines en mallas no estructuradas, integración P1, sondas, barridos y exportadores. `project.test.ts` recorre migraciones aditivas v1→v8, incluida v7→v8, firmas estables y validación geométrica.
 
-El ensayo de navegador cubre Worker, invalidación de respuestas obsoletas, ambos solvers, IC(0), RCM/natural, ecuación personalizada, error exacto, adaptación, transitorios, polígonos, geometría multidominio conectada y disjunta, edición de materiales por dominio, elasticidad, barridos y descargas. En PIN y PN edita nombre de dominio, bounding box, área activa, permitividad y potencial; después recalcula, ejecuta convergencia y realiza un barrido de polarización. Las capturas se guardan fuera del repositorio y el servidor temporal se detiene.
+El ensayo de navegador cubre Worker, invalidación de respuestas obsoletas, ambos solvers, IC(0), RCM/natural, ecuación personalizada, error exacto, adaptación, transitorios, polígonos, geometría multidominio conectada y disjunta, edición de materiales por dominio, elasticidad, barridos y descargas. También verifica las pestañas de flujo de trabajo, plegado y expansión del árbol, selección de dominios desde el SVG, apertura de fronteras desde Graphics y los controles reales de zoom/ajuste. En PIN y PN edita nombre de dominio, bounding box, área activa, permitividad y potencial; después recalcula, ejecuta convergencia y realiza un barrido de polarización. Las capturas se guardan fuera del repositorio y el servidor temporal se detiene.
 
 ## Aplicación de escritorio y release
 

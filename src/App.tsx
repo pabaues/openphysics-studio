@@ -1,36 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
-import {
-  Activity,
-  Box,
-  Check,
-  ChevronDown,
-  CircleHelp,
-  Download,
-  FilePlus2,
-  Flame,
-  FolderOpen,
-  Gauge,
-  Grid3X3,
-  LoaderCircle,
-  Play,
-  RotateCcw,
-  Save,
-  Waves,
-  Zap,
-} from 'lucide-react'
+import { Check, CircleHelp, Download, FilePlus2, FolderOpen, Gauge, RotateCcw, Save, Waves } from 'lucide-react'
 import { AdaptivePanel } from '@/components/AdaptivePanel'
 import { ModelTree, type NodeId } from '@/components/ModelTree'
 import { Inspector } from '@/components/Inspector'
+import { Ribbon, type RibbonTab } from '@/components/Ribbon'
 import { ConvergencePanel } from '@/components/ConvergencePanel'
 import { DerivedValuesPanel } from '@/components/DerivedValuesPanel'
 import { SweepPanel } from '@/components/SweepPanel'
-import { SimulationCanvas, type ResultQuantity, type ViewMode } from '@/components/SimulationCanvas'
+import { SimulationCanvas, type BoundarySide, type ResultQuantity, type ViewMode } from '@/components/SimulationCanvas'
 import { downloadText, toCsv, toDerivedCsv, toHtmlReport, toSweepCsv, toVtk } from '@/lib/fem/exporters'
 import { modelSignature, parseProjectJson } from '@/lib/fem/project'
 import { parseGeometryFile } from '@/lib/fem/geometry'
 import { heatResultAtTime } from '@/lib/fem/heat'
 import { createStudyJobClient } from '@/lib/fem/jobClient'
-import { createExampleModel, examplePresetGroups, type ExamplePresetId } from '@/lib/fem/presets'
+import { createExampleModel, type ExamplePresetId } from '@/lib/fem/presets'
 import { type SweepReport } from '@/lib/fem/sweep'
 import { solveActiveModel } from '@/lib/fem/study'
 import { defaultModel, type ActivePhysics, type AdaptiveReport, type AnySimulationResult, type ConvergenceReport, type HeatModel } from '@/lib/fem/types'
@@ -52,6 +35,8 @@ function App() {
   const [selectedCase, setSelectedCase] = useState(0)
   const [frameIndex, setFrameIndex] = useState(0)
   const [selected, setSelected] = useState<NodeId>('results')
+  const [selectedDomain, setSelectedDomain] = useState(0)
+  const [ribbonTab, setRibbonTab] = useState<RibbonTab>('home')
   const [view, setView] = useState<ViewMode>('results')
   const [quantity, setQuantity] = useState<ResultQuantity>('temperature')
   const [showMesh, setShowMesh] = useState(false)
@@ -168,12 +153,15 @@ function App() {
   }
   const loadModel = (next: HeatModel) => {
     setModel(next)
+    setSelectedDomain(0)
     void compute(next)
   }
   const importGeometry = async (file: File) => {
     try {
       const geometry = parseGeometryFile(file.name, await file.text())
       updateModel({ ...model, geometry })
+      setSelectedDomain(0)
+      setRibbonTab('geometry')
       setSelected('geometry')
       setView('geometry')
       notify(`Imported ${geometry.vertices.length}-vertex polygon from ${file.name}`)
@@ -232,6 +220,7 @@ function App() {
     updateModel(modelForPhysics(physics))
     setQuantity(physics === 'heat' ? 'temperature' : physics === 'electrostatics' ? 'potential' : physics === 'custom' ? 'custom' : 'displacement')
     setSelected(physics === 'heat' ? 'physics' : physics === 'electrostatics' ? 'electrostatics' : physics === 'custom' ? 'custom' : 'elasticity')
+    setRibbonTab('physics')
   }
   const selectNode = (node: NodeId) => {
     if (thermalNodes.includes(node) && model.activePhysics !== 'heat') updateModel(modelForPhysics('heat'))
@@ -243,14 +232,36 @@ function App() {
     if (structuralNodes.includes(node)) setQuantity('displacement')
     if (node === 'custom') setQuantity('custom')
     setSelected(node)
-    if (node === 'geometry') setView('geometry')
-    if (node === 'mesh') setView('mesh')
-    if (node === 'results') setView('results')
+    if (node === 'geometry') { setRibbonTab('geometry'); setView('geometry') }
+    else if (node === 'material') setRibbonTab('materials')
+    else if (node === 'mesh') { setRibbonTab('mesh'); setView('mesh') }
+    else if (['study', 'convergence', 'adaptive', 'sweep'].includes(node)) setRibbonTab('study')
+    else if (node === 'results') { setRibbonTab('results'); setView('results') }
+    else setRibbonTab('physics')
   }
   const choosePreset = (preset: ExamplePresetId) => {
     const next = createExampleModel(preset)
     setQuantity(next.activePhysics === 'heat' ? 'temperature' : next.activePhysics === 'electrostatics' ? 'potential' : next.activePhysics === 'custom' ? 'custom' : 'displacement')
     loadModel(next)
+  }
+  const selectDomain = (index: number) => {
+    setSelectedDomain(index)
+    setSelected('geometry')
+    setRibbonTab('geometry')
+    setView('geometry')
+  }
+  const selectBoundary = (side: BoundarySide) => {
+    const suffix = side[0]!.toUpperCase() + side.slice(1)
+    selectNode(model.activePhysics === 'heat' ? side : model.activePhysics === 'electrostatics' ? `electric${suffix}` as NodeId : model.activePhysics === 'elasticity' ? `structural${suffix}` as NodeId : 'custom')
+  }
+  const changeRibbonTab = (tab: RibbonTab) => {
+    setRibbonTab(tab)
+    if (tab === 'geometry') selectNode('geometry')
+    if (tab === 'materials') selectNode('material')
+    if (tab === 'physics') selectNode(model.activePhysics === 'heat' ? 'physics' : model.activePhysics)
+    if (tab === 'mesh') selectNode('mesh')
+    if (tab === 'study') selectNode('study')
+    if (tab === 'results') selectNode('results')
   }
 
   const resultUnit = quantity === 'vonMises' ? 'Pa' : result?.physics === 'elasticity' ? 'm' : result?.physics === 'electrostatics' ? quantity === 'electricField' ? 'V/m' : 'V' : result?.physics === 'custom' ? quantity === 'customGradient' ? '|∇u|' : 'u' : quantity === 'flux' ? 'W/m²' : '°C'
@@ -285,18 +296,11 @@ function App() {
       <button className="help-button" title="About the numerical models" onClick={() => notify('P1 FEM · Heat conduction · Electrostatics · Linear elasticity · Automated mesh convergence')}><CircleHelp size={17} /></button>
     </header>
 
-    <div className="ribbon">
-      <div className="ribbon-group preset-group"><Flame size={16} className="text-orange-500" /><select aria-label="Example model" onChange={(event) => choosePreset(event.target.value as ExamplePresetId)} value=""><option value="" disabled>Example models</option>{examplePresetGroups.map((group) => <optgroup key={group.label} label={group.label}>{group.options.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</optgroup>)}</select><ChevronDown size={12} /></div>
-      <div className="ribbon-separator" />
-      <button className="ribbon-button" onClick={() => selectNode('geometry')}><Box size={16} /><span>Geometry</span></button>
-      <div className="physics-picker">{model.activePhysics === 'heat' ? <Flame size={15} /> : model.activePhysics === 'electrostatics' ? <Zap size={15} /> : model.activePhysics === 'custom' ? <Activity size={15} /> : <Box size={15} />}<select aria-label="Active physics" value={model.activePhysics} onChange={(event) => changePhysics(event.target.value as ActivePhysics)}><option value="heat">Heat Transfer</option><option value="electrostatics">Electrostatics</option><option value="elasticity">Linear Elasticity</option><option value="custom">Custom scalar PDE</option></select><Activity size={12} /></div>
-      <button className="ribbon-button" onClick={() => selectNode('mesh')}><Grid3X3 size={16} /><span>Mesh</span></button>
-      <div className="header-spacer" />{stale && <span className="outdated-label">Model modified</span>}
-      <button className="compute-button" disabled={busy} onClick={() => compute()}>{busy ? <LoaderCircle size={16} className="spin" /> : <Play size={15} fill="currentColor" />}{converging ? 'Studying…' : computing ? 'Computing…' : 'Compute'}<kbd>Ctrl ↵</kbd></button>
-    </div>
+    <Ribbon model={model} activeTab={ribbonTab} busy={busy} computing={computing} converging={converging} stale={stale} hasResult={!!result} onTabChange={changeRibbonTab} onSelect={selectNode} onPhysicsChange={changePhysics} onPresetChange={choosePreset} onImportGeometry={importGeometry} onCompute={() => compute()} onExport={exportFile} />
 
     <main className="workspace">
-      <ModelTree selected={selected} onSelect={selectNode} hasResults={!!result && !stale} activePhysics={model.activePhysics} />
+      <ModelTree selected={selected} onSelect={selectNode} hasResults={!!result && !stale} activePhysics={model.activePhysics} domains={model.geometry.domains} selectedDomain={selectedDomain} onSelectDomain={selectDomain} />
+      <Inspector model={model} selected={selected} result={displayResult} stale={stale} converging={converging} selectedDomain={selectedDomain} onSelectedDomainChange={setSelectedDomain} onChange={updateModel} onImportGeometry={importGeometry} onExport={exportFile} onRunConvergence={runConvergence} onRunAdaptive={runAdaptive} onRunSweep={runSweep} />
       <section className="center-panel">
         <div className="viewport-toolbar">
           <div className="view-tabs"> {(['geometry', 'mesh', 'results'] as const).map((item) => <button key={item} className={view === item ? 'active' : ''} onClick={() => setView(item)}>{item[0]!.toUpperCase() + item.slice(1)}</button>)}</div>
@@ -309,7 +313,7 @@ function App() {
           </>}
           <button className="icon-button" title="Reset model" onClick={() => loadModel(structuredClone(defaultModel))}><RotateCcw size={14} /></button>
         </div>
-        <SimulationCanvas model={model} result={displayResult} view={view} quantity={quantity} showMesh={showMesh} stale={stale} />
+        <SimulationCanvas model={model} result={displayResult} view={view} quantity={quantity} showMesh={showMesh} stale={stale} selectedDomain={selectedDomain} onSelectDomain={selectDomain} onSelectBoundary={selectBoundary} />
         {sweepReport && view === 'results' && <SweepPanel report={sweepReport} selectedCase={selectedCase} onSelect={(index) => {
           const selectedResult = sweepReport.cases[index]!.result
           setSelectedCase(index)
@@ -327,7 +331,6 @@ function App() {
           <div className="metric solver-metric"><span>LINEAR SOLVER</span><strong className={displayResult?.converged ? 'converged' : 'not-converged'}>{displayResult ? displayResult.solver === 'direct' ? 'DIRECT LDLᵀ' : 'ITERATIVE CG' : '—'}</strong><small>{displayResult ? `${displayResult.converged ? 'Converged' : 'Check residual'} · ${displayResult.solver === 'iterative' ? `${displayResult.iterations} iterations · ` : ''}${displayResult.relativeResidual.toExponential(1)} residual` : 'Not solved'}</small></div>
         </div>
       </section>
-      <Inspector model={model} selected={selected} result={displayResult} stale={stale} converging={converging} onChange={updateModel} onImportGeometry={importGeometry} onExport={exportFile} onRunConvergence={runConvergence} onRunAdaptive={runAdaptive} onRunSweep={runSweep} />
     </main>
 
     <footer className="status-bar"><span className={`status-indicator ${result?.converged && !stale ? 'ok' : ''}`} /><span>{converging ? 'Running successive mesh studies…' : computing ? 'Assembling and solving…' : stale ? 'Results need updating' : result?.converged ? 'Study completed successfully' : 'Ready'}</span><span className="status-divider">|</span><span>2D · {physicsName}</span><div className="header-spacer" /><Gauge size={12} /><span>{result ? `${result.solveTimeMs.toFixed(1)} ms` : '—'}</span><span className="status-divider">|</span><span>Local session</span><Download size={12} /><span>Open data</span></footer>

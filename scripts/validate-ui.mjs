@@ -66,7 +66,7 @@ async function validatePhotonicTemplate(page, { id, name, side, voltage, screens
   await page.locator('.convergence-panel').waitFor({ timeout: 60000 })
   assert.equal(await page.locator('.convergence-table tbody tr').count(), 2)
 
-  await page.getByRole('button', { name: 'Parametric sweep', exact: true }).click()
+  await page.getByRole('complementary', { name: 'Model builder' }).getByRole('button', { name: 'Parametric sweep', exact: true }).click()
   assert.equal(await page.getByLabel('Sweep parameter').inputValue(), `electrostatics.${side.toLowerCase()}Voltage`)
   await page.getByLabel('Sweep values').fill(side === 'Left' ? '-1, -3' : '1, 3')
   await page.getByLabel('Sweep values').press('Tab')
@@ -113,6 +113,25 @@ try {
   assert.equal(await page.locator('#colorScale stop').first().getAttribute('stop-color'), '#253494')
   assert.equal(await page.locator('#colorScale stop').last().getAttribute('stop-color'), '#800026')
   await page.screenshot({ path: path.join(output, 'openphysics-desktop.png'), fullPage: true })
+
+  await page.getByRole('tab', { name: 'Materials', exact: true }).click()
+  assert.equal(await page.getByRole('tab', { name: 'Materials', exact: true }).getAttribute('aria-selected'), 'true')
+  await page.getByLabel('Material domain').waitFor()
+  await page.getByRole('button', { name: 'Collapse Heat Transfer', exact: true }).click()
+  assert.equal(await page.getByRole('button', { name: 'Left boundary', exact: true }).count(), 2)
+  await page.getByRole('button', { name: 'Expand Heat Transfer', exact: true }).click()
+  assert.equal(await page.getByRole('button', { name: 'Left boundary', exact: true }).count(), 3)
+  const fittedViewBox = await page.locator('.simulation-canvas').getAttribute('viewBox')
+  await page.getByRole('button', { name: 'Zoom in', exact: true }).click()
+  assert.notEqual(await page.locator('.simulation-canvas').getAttribute('viewBox'), fittedViewBox)
+  await page.getByRole('button', { name: 'Fit view', exact: true }).click()
+  assert.equal(await page.locator('.simulation-canvas').getAttribute('viewBox'), fittedViewBox)
+  await page.locator('.ribbon-button').filter({ hasText: 'Geometry' }).click()
+  await page.locator('.domain-selection').first().click()
+  assert.equal(await page.getByLabel('Active domain', { exact: true }).inputValue(), '0')
+  await page.getByRole('button', { name: 'Edit left boundary', exact: true }).click()
+  await page.getByRole('heading', { name: 'Left boundary', exact: true }).waitFor()
+  await page.locator('.results-node').click()
 
   await page.locator('.view-tabs button').filter({ hasText: 'Mesh' }).click()
   await page.locator('.viewport-label').filter({ hasText: 'Mesh 1' }).waitFor()
@@ -171,7 +190,7 @@ try {
   assert.equal(await electricDownload.failure(), null)
 
   await page.locator('.ribbon-button').filter({ hasText: 'Geometry' }).click()
-  await page.getByLabel('Geometry file').setInputFiles({
+  await page.getByLabel('Geometry file', { exact: true }).setInputFiles({
     name: 'l-domain.svg', mimeType: 'image/svg+xml',
     buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0 H2 V1 H1 V2 H0 Z" /></svg>'),
   })
@@ -205,6 +224,8 @@ try {
   await page.locator('.ribbon-button').filter({ hasText: 'Geometry' }).click()
   assert.equal(await page.getByLabel('Active domain', { exact: true }).locator('option').count(), 2)
   assert.equal(await page.locator('.selection-card strong').textContent(), '2 domains · 4 active boundary segments')
+  await page.locator('.domain-selection').nth(1).click()
+  assert.equal(await page.getByLabel('Active domain', { exact: true }).inputValue(), '1')
   await page.screenshot({ path: path.join(output, 'openphysics-multidomain-geometry.png'), fullPage: true })
   await page.getByRole('button', { name: 'Materials', exact: true }).click()
   await page.getByLabel('Material domain').selectOption('1')
@@ -243,7 +264,7 @@ try {
   await page.screenshot({ path: path.join(output, 'openphysics-elasticity-convergence.png'), fullPage: true })
 
   await page.getByLabel('Active physics').selectOption('heat')
-  await page.getByRole('button', { name: 'Parametric sweep', exact: true }).click()
+  await page.getByRole('complementary', { name: 'Model builder' }).getByRole('button', { name: 'Parametric sweep', exact: true }).click()
   assert.equal(await page.getByLabel('Sweep parameter').inputValue(), 'material.conductivity')
 
   await page.getByLabel('Example model').selectOption('generation')
@@ -280,7 +301,7 @@ try {
   assert.equal(derivedDownload.suggestedFilename(), 'derived-values.csv')
   assert.equal(await derivedDownload.failure(), null)
 
-  await page.getByRole('button', { name: 'Parametric sweep', exact: true }).click()
+  await page.getByRole('complementary', { name: 'Model builder' }).getByRole('button', { name: 'Parametric sweep', exact: true }).click()
   await page.getByRole('button', { name: 'Run parametric sweep' }).click()
   await page.locator('.sweep-panel').waitFor({ timeout: 60000 })
   assert.equal(await page.locator('.sweep-table tbody tr').count(), 3)

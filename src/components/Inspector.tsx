@@ -14,6 +14,8 @@ interface InspectorProps {
   result: AnySimulationResult | null
   stale: boolean
   converging: boolean
+  selectedDomain: number
+  onSelectedDomainChange: (index: number) => void
   onChange: (model: HeatModel) => void
   onImportGeometry: (file: File) => void
   onExport: (format: 'csv' | 'vtk' | 'json' | 'derived' | 'html' | 'sweep') => void
@@ -121,8 +123,7 @@ function EdgeBoundaryEditor({ model, physics, onChange }: { model: HeatModel; ph
   </div>
 }
 
-export function Inspector({ model, selected, result, stale, converging, onChange, onImportGeometry, onExport, onRunConvergence, onRunAdaptive, onRunSweep }: InspectorProps) {
-  const [selectedDomain, setSelectedDomain] = useState(0)
+export function Inspector({ model, selected, result, stale, converging, selectedDomain, onSelectedDomainChange, onChange, onImportGeometry, onExport, onRunConvergence, onRunAdaptive, onRunSweep }: InspectorProps) {
   const domainIndex = model.geometry.domains[selectedDomain] ? selectedDomain : 0
   const activeDomain = model.geometry.domains[domainIndex]!
   const activeMaterial = materialForDomain(model, domainIndex)
@@ -139,7 +140,7 @@ export function Inspector({ model, selected, result, stale, converging, onChange
     const id = `domain-${sequence}`
     const domain = { id, name: `Domain ${sequence}`, vertices: [{ x, y: 0 }, { x: x + width, y: 0 }, { x: x + width, y: model.geometry.height }, { x, y: model.geometry.height }] }
     onChange({ ...model, geometry: multiDomainGeometry([...model.geometry.domains, domain]), domainMaterials: { ...model.domainMaterials, [id]: structuredClone(activeMaterial) } })
-    setSelectedDomain(model.geometry.domains.length)
+    onSelectedDomainChange(model.geometry.domains.length)
   }
   const removeDomain = () => {
     if (model.geometry.domains.length === 1) return
@@ -149,7 +150,7 @@ export function Inspector({ model, selected, result, stale, converging, onChange
     const material = domainIndex === 0 ? materialForDomain(model, 1) : model.material
     if (domainIndex === 0) delete domainMaterials[retained[0]!.id]
     onChange({ ...model, material, geometry: multiDomainGeometry(retained), domainMaterials })
-    setSelectedDomain(0)
+    onSelectedDomainChange(0)
   }
   const updatePhysics = (patch: Partial<HeatModel['physics']>) => onChange({ ...model, activePhysics: 'heat', physics: { ...model.physics, ...patch } })
   const updateElectric = (patch: Partial<HeatModel['electrostatics']>) => onChange({ ...model, activePhysics: 'electrostatics', electrostatics: { ...model.electrostatics, ...patch } })
@@ -178,7 +179,7 @@ export function Inspector({ model, selected, result, stale, converging, onChange
       <div className="panel-heading"><span>Settings</span><Info size={14} /></div>
       <div className="inspector-scroll">
         {selected === 'geometry' && <Section eyebrow="Geometry sequence" title={model.geometry.domains.length > 1 ? `${model.geometry.domains.length} geometry domains` : isPolygon ? 'Simple polygon' : 'Parametric rectangle'} description="Independent polygon domains share nodes only across complete matching edges.">
-          <label className="field-label"><span>Active domain</span><select aria-label="Active domain" value={domainIndex} onChange={(event) => setSelectedDomain(Number(event.target.value))}>{model.geometry.domains.map((domain, index) => <option key={domain.id} value={index}>{domain.name}</option>)}</select></label>
+          <label className="field-label"><span>Active domain</span><select aria-label="Active domain" value={domainIndex} onChange={(event) => onSelectedDomainChange(Number(event.target.value))}>{model.geometry.domains.map((domain, index) => <option key={domain.id} value={index}>{domain.name}</option>)}</select></label>
           <label className="field-label"><span>Active domain name</span><input aria-label="Active domain name" className="text-field" value={activeDomain.name} maxLength={80} onChange={(event) => {
             const domains = model.geometry.domains.map((domain, index) => index === domainIndex ? { ...domain, name: event.target.value } : domain)
             onChange({ ...model, geometry: { ...model.geometry, domains } })
@@ -199,7 +200,7 @@ export function Inspector({ model, selected, result, stale, converging, onChange
         </Section>}
 
         {selected === 'material' && <Section eyebrow="Materials" title={`${activeDomain.name} · isotropic solid`} description="Domain-specific properties with optional linear spatial gradients, c(x,y) = c₀ + gx x + gy y.">
-          <label className="field-label"><span>Material domain</span><select aria-label="Material domain" value={domainIndex} onChange={(event) => setSelectedDomain(Number(event.target.value))}>{model.geometry.domains.map((domain, index) => <option key={domain.id} value={index}>{domain.name}</option>)}</select></label>
+          <label className="field-label"><span>Material domain</span><select aria-label="Material domain" value={domainIndex} onChange={(event) => onSelectedDomainChange(Number(event.target.value))}>{model.geometry.domains.map((domain, index) => <option key={domain.id} value={index}>{domain.name}</option>)}</select></label>
           <NumberField label="Thermal conductivity" value={activeMaterial.conductivity} unit="W/(m·K)" min={0.000001} step={1} onChange={(conductivity) => updateMaterial({ conductivity })} />
           <NumberField label="Conductivity gradient X" value={activeMaterial.gradients.conductivityX} unit="W/(m²·K)" step={1} onChange={(conductivityX) => updateMaterial({ gradients: { ...activeMaterial.gradients, conductivityX } })} />
           <NumberField label="Conductivity gradient Y" value={activeMaterial.gradients.conductivityY} unit="W/(m²·K)" step={1} onChange={(conductivityY) => updateMaterial({ gradients: { ...activeMaterial.gradients, conductivityY } })} />
