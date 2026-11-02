@@ -1,27 +1,23 @@
 import { manufacturedError, validateManufacturedModel } from './manufactured'
 import { maximumElementSize } from './mesh'
+import { maximumTetrahedronSize } from './mesh3d'
 import { resultValues, solveActiveModel } from './study'
-import type { AnySimulationResult, ConvergenceEntry, ConvergenceReport, HeatModel } from './types'
+import type { AnySimulationResult, ConvergenceEntry, ConvergenceReport, HeatModel, MeshNode } from './types'
 
-function coarseSample(fine: AnySimulationResult, coarseNodeIndex: number, coarseNx: number): number {
-  const refinement = (fine.mesh.kind === 'mapped' ? fine.mesh.nx : 0) / coarseNx
-  const i = coarseNodeIndex % (coarseNx + 1)
-  const j = Math.floor(coarseNodeIndex / (coarseNx + 1))
-  const fineIndex = Math.round(j * refinement) * (fine.mesh.kind === 'mapped' ? fine.mesh.nx + 1 : 0) + Math.round(i * refinement)
-  return resultValues(fine)[fineIndex]!
+function coordinateKey(node: MeshNode): string {
+  return [node.x, node.y, node.z ?? 0].map((value) => value.toPrecision(14)).join(':')
 }
 
 function compareGrids(coarse: AnySimulationResult, fine: AnySimulationResult) {
   const coarseValues = resultValues(coarse)
   const fineValues = resultValues(fine)
-  // Multidomain assembly inserts new nodes domain by domain, so coarse global
-  // indices need not remain contiguous even though every coarse coordinate is nested.
-  const fineAtCoordinates = new Map(fine.mesh.nodes.map((node, index) => [`${node.x}:${node.y}`, fineValues[index]!]))
+  // Domain assembly changes global indices; nested coordinates are the stable grid identity.
+  const fineAtCoordinates = new Map(fine.mesh.nodes.map((node, index) => [coordinateKey(node), fineValues[index]!]))
   let squaredDifference = 0
   let squaredReference = 0
   let maximumDifference = 0
   coarse.mesh.nodes.forEach((node, index) => {
-    const fineValue = coarse.mesh.kind === 'unstructured' ? fineAtCoordinates.get(`${node.x}:${node.y}`) : coarseSample(fine, index, coarse.mesh.nx)
+    const fineValue = fineAtCoordinates.get(coordinateKey(node))
     if (fineValue === undefined) throw new Error('The refined mesh does not contain a required coarse-grid coordinate.')
     const difference = fineValue - coarseValues[index]!
     squaredDifference += difference * difference
@@ -33,42 +29,57 @@ function compareGrids(coarse: AnySimulationResult, fine: AnySimulationResult) {
   return { relativeL2: denominator > 0 ? absoluteL2 / denominator : absoluteL2, maximumDifference }
 }
 
-/** Successive-grid self-convergence for mapped and nested unstructured meshes. */
-export function runConvergenceStudy(model: HeatModel): ConvergenceReport {
-  const started = performance.now()
-  validateManufacturedModel(model)
+function validateFinestSize(model: HeatModel) {
   const levels = model.convergence.levels
-  if (model.geometry.shape === 'rectangle') {
-    const refinement = 2 ** (levels - 1)
-    if (model.mesh.nx * refinement > 128 || model.mesh.ny * refinement > 128) throw new Error('The finest convergence mesh exceeds 128 divisions per direction. Reduce the base mesh or levels.')
+  const factor = 2 ** (levels - 1)
+  if (model.geometry.dimension === '3d') {
+    const nz = (model.mesh.nz ?? 2) * factor
+    const triangles = model.geometry.shape === 'rectangle' && model.geometry.domains.length === 1
+      ? model.mesh.nx * factor * model.mesh.ny * factor * 2
+      : Math.max(1, model.geometry.vertices.length - 2) * 4 ** ((model.mesh.refinement ?? 1) + levels - 1)
+    if (triangles * nz * 3 > 100000 || nz > 32) throw new Error('The finest 3D convergence mesh exceeds 100,000 tetrahedra or 32 Z divisions. Reduce the base mesh or levels.')
+  } else if (model.geometry.shape === 'rectangle') {
+    if (model.mesh.nx * factor > 128 || model.mesh.ny * factor > 128) throw new Error('The finest convergence mesh exceeds 128 divisions per direction. Reduce the base mesh or levels.')
   } else {
     const estimatedTriangles = Math.max(1, model.geometry.vertices.length - 2) * 4 ** ((model.mesh.refinement ?? 1) + levels - 1)
     if (estimatedTriangles > 100000) throw new Error('The finest convergence mesh exceeds 100,000 triangles. Reduce the polygon refinement or levels.')
   }
+}
 
+/** Successive-grid self-convergence for nested triangular and tetrahedral meshes. */
+export function runConvergenceStudy(model: HeatModel): ConvergenceReport {
+  const started = performance.now()
+  validateManufacturedModel(model)
+  validateFinestSize(model)
+  const levels = model.convergence.levels
   const entries: ConvergenceEntry[] = []
   let previous: AnySimulationResult | undefined
   let finest: AnySimulationResult | undefined
   let converged = true
   for (let level = 0; level < levels; level += 1) {
     const factor = 2 ** level
-    const current = solveActiveModel({
-      ...model,
-      mesh: {
-        nx: model.geometry.shape === 'rectangle' ? model.mesh.nx * factor : model.mesh.nx,
-        ny: model.geometry.shape === 'rectangle' ? model.mesh.ny * factor : model.mesh.ny,
-        refinement: (model.mesh.refinement ?? 1) + (model.geometry.shape === 'polygon' ? level : 0),
-      },
-    })
-    if (current.mesh.triangles.length > 100000) throw new Error('A convergence mesh exceeds 100,000 triangles.')
+    const mesh = {
+      nx: model.geometry.shape === 'rectangle' ? model.mesh.nx * factor : model.mesh.nx,
+      ny: model.geometry.shape === 'rectangle' ? model.mesh.ny * factor : model.mesh.ny,
+      nz: model.geometry.dimension === '3d' ? (model.mesh.nz ?? 2) * factor : model.mesh.nz,
+      refinement: (model.mesh.refinement ?? 1) + (model.geometry.shape === 'polygon' ? level : 0),
+    }
+    const current = solveActiveModel({ ...model, mesh })
+    const elements = current.mesh.kind === 'tetrahedral' ? current.mesh.tetrahedra.length : current.mesh.triangles.length
+    if (elements > 100000) throw new Error('A convergence mesh exceeds 100,000 elements.')
+    const grid = current.mesh.kind === 'tetrahedral'
+      ? model.geometry.shape === 'rectangle' && model.geometry.domains.length === 1
+        ? `P1 tetrahedra · ${mesh.nx} × ${mesh.ny} × ${mesh.nz}`
+        : `P1 tetrahedra · R${current.mesh.refinement} · Z${current.mesh.nz}`
+      : current.mesh.kind === 'mapped' ? `${current.mesh.nx} × ${current.mesh.ny}` : `P1 · R${current.mesh.refinement}`
     const entry: ConvergenceEntry = {
       level: level + 1,
-      grid: current.mesh.kind === 'mapped' ? `${current.mesh.nx} × ${current.mesh.ny}` : `P1 · R${current.mesh.refinement}`,
+      grid,
       nx: current.mesh.kind === 'mapped' ? current.mesh.nx : 0,
       ny: current.mesh.kind === 'mapped' ? current.mesh.ny : 0,
       refinement: current.mesh.refinement,
       nodes: current.mesh.nodes.length,
-      elementSize: maximumElementSize(current.mesh),
+      elementSize: current.mesh.kind === 'tetrahedral' ? maximumTetrahedronSize(current.mesh) : maximumElementSize(current.mesh),
       iterations: current.iterations,
       solveTimeMs: current.solveTimeMs,
       converged: current.converged,

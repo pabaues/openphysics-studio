@@ -4,21 +4,26 @@ import { scaleGeometryToBoundingBox, scaleGeometryToDomainArea, signedPolygonAre
 import { createExampleModel, type ExamplePresetId } from './presets'
 import { heatModelSchema } from './project'
 import { solveElectrostatics } from './electrostatics'
+import { solveActiveModel } from './study'
 import { runParametricSweep } from './sweep'
 
 const photonicPresets: ExamplePresetId[] = ['pinPhotodetector', 'pnModulator']
 
-describe('3D geometry preset', () => {
-  it('validates independent prismatic solids and preserves their editable 2D physics', () => {
+describe('3D geometry and stationary heat preset', () => {
+  it('validates conforming prismatic solids and solves their thermal field', () => {
     const model = heatModelSchema.parse(createExampleModel('block3d'))
+    model.study.solver = 'direct'
     expect(model.geometry.dimension).toBe('3d')
     expect(model.geometry.domains).toHaveLength(3)
-    expect(model.geometry.domains.map((domain) => domain.depth)).toEqual([0.03, 0.02, 0.012])
-    expect(model.geometry.domains.map((domain) => domain.z)).toEqual([0, 0.005, 0.009])
+    expect(model.geometry.domains.map((domain) => domain.depth)).toEqual([0.03, 0.03, 0.03])
+    expect(model.geometry.domains.map((domain) => domain.z)).toEqual([0, 0, 0])
+    const result = solveActiveModel(model)
+    expect(result.mesh.kind).toBe('tetrahedral')
+    expect(result.converged).toBe(true)
     const resized = scaleGeometryToBoundingBox(model.geometry, 0.16, 0.09)
     expect(resized.dimension).toBe('3d')
-    expect(resized.domains.map((domain) => domain.depth)).toEqual([0.03, 0.02, 0.012])
-    expect(resized.domains.map((domain) => domain.z)).toEqual([0, 0.005, 0.009])
+    expect(resized.domains.map((domain) => domain.depth)).toEqual([0.03, 0.03, 0.03])
+    expect(resized.domains.map((domain) => domain.z)).toEqual([0, 0, 0])
   })
 })
 

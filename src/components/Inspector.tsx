@@ -162,13 +162,16 @@ export function Inspector({ model, selected, result, stale, converging, selected
   const isElectricBoundary = selected.startsWith('electric')
   const isStructuralBoundary = selected.startsWith('structural')
   const isPolygon = model.geometry.shape === 'polygon'
+  const is3D = model.geometry.dimension === '3d'
   const isPhotonicTemplate = activeDomain.id.startsWith('domain-pin-') || activeDomain.id.startsWith('domain-mod-')
   const resultName = result?.physics === 'electrostatics' ? 'potential' : result?.physics === 'elasticity' ? 'displacement' : result?.physics === 'custom' ? 'scalar field' : 'temperature'
   const finestDivisions = Math.max(model.mesh.nx, model.mesh.ny) * 2 ** (model.convergence.levels - 1)
   const baseRefinement = model.mesh.refinement ?? 1
   const finestRefinement = baseRefinement + model.convergence.levels - 1
+  const finestZ = (model.mesh.nz ?? 2) * 2 ** (model.convergence.levels - 1)
   const estimatedTriangles = model.geometry.domains.reduce((sum, domain) => sum + domain.vertices.length - 2, 0) * 4 ** finestRefinement
-  const convergenceTooLarge = isPolygon ? finestRefinement > 5 || estimatedTriangles > 100000 : finestDivisions > 128
+  const estimatedTetrahedra = (isPolygon ? estimatedTriangles : 2 * model.mesh.nx * model.mesh.ny * 4 ** (model.convergence.levels - 1)) * finestZ * 3
+  const convergenceTooLarge = is3D ? finestZ > 32 || estimatedTetrahedra > 100000 : isPolygon ? finestRefinement > 5 || estimatedTriangles > 100000 : finestDivisions > 128
   const geometryImport = <label className="study-button geometry-import"><FileUp size={15} />Import SVG or CSV<input aria-label="Geometry file" type="file" accept=".svg,.csv" hidden onChange={(event) => {
     const file = event.target.files?.[0]
     if (file) onImportGeometry(file)
@@ -179,8 +182,11 @@ export function Inspector({ model, selected, result, stale, converging, selected
     <aside className="inspector" aria-label="Settings">
       <div className="panel-heading"><span>Settings</span><Info size={14} /></div>
       <div className="inspector-scroll">
-        {selected === 'geometry' && <Section eyebrow="Geometry sequence" title={model.geometry.domains.length > 1 ? `${model.geometry.domains.length} geometry domains` : isPolygon ? 'Simple polygon' : 'Parametric rectangle'} description="Build 2D sections or extrude each domain into an independent prismatic solid.">
-          <label className="field-label"><span>Geometry dimension</span><select aria-label="Geometry dimension" value={model.geometry.dimension} onChange={(event) => onChange({ ...model, geometry: { ...model.geometry, dimension: event.target.value as '2d' | '3d' } })}><option value="2d">2D cross-section</option><option value="3d">3D extrusion</option></select></label>
+        {selected === 'geometry' && <Section eyebrow="Geometry sequence" title={model.geometry.domains.length > 1 ? `${model.geometry.domains.length} geometry domains` : isPolygon ? 'Simple polygon' : 'Parametric rectangle'} description={model.geometry.dimension === '3d' ? 'Extrude each section into a prismatic solid for tetrahedral meshing and stationary 3D heat conduction.' : 'Build an editable 2D section, or switch to 3D to extrude every domain.'}>
+          <label className="field-label"><span>Geometry dimension</span><select aria-label="Geometry dimension" value={model.geometry.dimension} onChange={(event) => {
+            const dimension = event.target.value as '2d' | '3d'
+            onChange(dimension === '3d' ? { ...model, activePhysics: 'heat', geometry: { ...model.geometry, dimension }, study: { ...model.study, type: 'stationary', manufacturedSolution: 'none' }, sweep: { ...model.sweep, parameter: 'material.conductivity' } } : { ...model, geometry: { ...model.geometry, dimension } })
+          }}><option value="2d">2D cross-section</option><option value="3d">3D extrusion</option></select></label>
           <label className="field-label"><span>Active domain</span><select aria-label="Active domain" value={domainIndex} onChange={(event) => onSelectedDomainChange(Number(event.target.value))}>{model.geometry.domains.map((domain, index) => <option key={domain.id} value={index}>{domain.name}</option>)}</select></label>
           <label className="field-label"><span>Active domain name</span><input aria-label="Active domain name" className="text-field" value={activeDomain.name} maxLength={80} onChange={(event) => {
             const domains = model.geometry.domains.map((domain, index) => index === domainIndex ? { ...domain, name: event.target.value } : domain)
@@ -200,7 +206,7 @@ export function Inspector({ model, selected, result, stale, converging, selected
               onChange({ ...model, geometry: { ...model.geometry, domains } })
             }} />
             <div className="property-row"><span>Active solid volume</span><strong>{geometryVolume(model.geometry, domainIndex).toExponential(4)} m³</strong></div>
-            <div className="solver-note neutral"><Info size={16} /><span>The viewport shows actual extruded solids. Meshing and physics still solve the 2D cross-section; depth and Z do not create 3D finite elements.</span></div>
+            <div className="solver-note neutral"><Info size={16} /><span>Depth and Z create true 3D tetrahedra. Connected domains must share depth and center Z; stationary Heat Transfer is the currently supported 3D physics.</span></div>
           </>}
           <div className="property-row"><span>Domain vertices</span><strong>{activeDomain.vertices.length}</strong></div>
           {isPolygon && model.geometry.domains.length === 1 && <button className="export-button" onClick={() => onChange({ ...model, geometry: rectangleGeometry(model.geometry.width, model.geometry.height, model.geometry.depth, model.geometry.dimension) })}>Use parametric rectangle</button>}
@@ -235,7 +241,7 @@ export function Inspector({ model, selected, result, stale, converging, selected
         {selected === 'physics' && <Section eyebrow="Heat transfer in solids" title="Energy balance" description="Stationary or transient conduction with a uniform volumetric heat source.">
           <div className="equation-box primary">{model.study.type === 'transient' ? 'ρCₚ ∂T/∂t + ∇ · (−k∇T) = Q' : '∇ · (−k∇T) = Q'}</div>
           <NumberField label="Heat source Q" value={model.physics.heatSource} unit="W/m³" min={-1e12} max={1e12} step={10000} onChange={(heatSource) => updatePhysics({ heatSource })} />
-          <div className="property-row"><span>Discretization</span><strong>Linear triangular FEM</strong></div>
+          <div className="property-row"><span>Discretization</span><strong>{model.geometry.dimension === '3d' ? 'Linear tetrahedral FEM · 3D' : 'Linear triangular FEM · 2D'}</strong></div>
           <EdgeBoundaryEditor model={model} physics="heat" onChange={onChange} />
         </Section>}
 
@@ -243,7 +249,7 @@ export function Inspector({ model, selected, result, stale, converging, selected
           <NumberField label="Temperature" value={selected === 'left' ? model.physics.leftTemperature : model.physics.rightTemperature} unit="°C" min={-273.15} max={10000} onChange={(value) => updatePhysics(selected === 'left' ? { leftTemperature: value } : { rightTemperature: value })} />
           <div className="equation-box">T = T₀ <span>on ∂Ω</span></div>
         </Section>}
-        {(selected === 'top' || selected === 'bottom') && <Section eyebrow="Thermal boundary" title={`${selected === 'top' ? 'Top' : 'Bottom'} boundary`} description="Choose a fixed temperature or zero normal heat flux."><ThermalBoundary condition={model.physics[selected]} onChange={(condition) => updatePhysics({ [selected]: condition })} /></Section>}
+        {(selected === 'top' || selected === 'bottom' || selected === 'front' || selected === 'back') && <Section eyebrow="Thermal boundary" title={`${selected[0]!.toUpperCase() + selected.slice(1)} boundary${selected === 'front' ? ' (+Z)' : selected === 'back' ? ' (−Z)' : ''}`} description="Choose a fixed temperature or zero normal heat flux."><ThermalBoundary condition={model.physics[selected] ?? { type: 'insulated' }} onChange={(condition) => updatePhysics({ [selected]: condition })} /></Section>}
 
         {selected === 'electrostatics' && <Section eyebrow="Electrostatics" title="Gauss’s law" description="Stationary electric potential with uniform space-charge density.">
           <div className="equation-box primary">∇ · (−ε∇V) = ρ</div>
@@ -284,17 +290,20 @@ export function Inspector({ model, selected, result, stale, converging, selected
           <EdgeBoundaryEditor model={model} physics="custom" onChange={onChange} />
         </Section>}
 
-        {selected === 'mesh' && <Section eyebrow="Mesh sequence" title={isPolygon ? 'Unstructured triangles' : 'Mapped triangles'} description={isPolygon ? 'Earcut triangulation followed by nested one-to-four red refinement.' : 'A structured grid split into first-order triangular finite elements.'}>
+        {selected === 'mesh' && <Section eyebrow="Mesh sequence" title={is3D ? 'Prismatic tetrahedra' : isPolygon ? 'Unstructured triangles' : 'Mapped triangles'} description={is3D ? 'Nested section triangulation, Z extrusion and three conforming P1 tetrahedra per triangular prism.' : isPolygon ? 'Earcut triangulation followed by nested one-to-four red refinement.' : 'A structured grid split into first-order triangular finite elements.'}>
           {!isPolygon && <>
-            <label className="field-label"><span>Horizontal divisions <b>{model.mesh.nx}</b></span><input type="range" min="4" max="64" step="2" value={model.mesh.nx} onChange={(e) => onChange({ ...model, mesh: { ...model.mesh, nx: Number(e.target.value) } })} /></label>
-            <label className="field-label"><span>Vertical divisions <b>{model.mesh.ny}</b></span><input type="range" min="4" max="64" step="2" value={model.mesh.ny} onChange={(e) => onChange({ ...model, mesh: { ...model.mesh, ny: Number(e.target.value) } })} /></label>
-            <div className="mesh-summary"><strong>{((model.mesh.nx + 1) * (model.mesh.ny + 1)).toLocaleString()}</strong><span>nodes</span><strong>{(2 * model.mesh.nx * model.mesh.ny).toLocaleString()}</strong><span>triangles</span></div>
+            <label className="field-label"><span>Horizontal divisions <b>{model.mesh.nx}</b></span><input aria-label="Horizontal divisions" type="range" min="4" max="64" step="2" value={model.mesh.nx} onChange={(e) => onChange({ ...model, mesh: { ...model.mesh, nx: Number(e.target.value) } })} /></label>
+            <label className="field-label"><span>Vertical divisions <b>{model.mesh.ny}</b></span><input aria-label="Vertical divisions" type="range" min="4" max="64" step="2" value={model.mesh.ny} onChange={(e) => onChange({ ...model, mesh: { ...model.mesh, ny: Number(e.target.value) } })} /></label>
+            <div className="mesh-summary"><strong>{((model.mesh.nx + 1) * (model.mesh.ny + 1) * (is3D ? (model.mesh.nz ?? 2) + 1 : 1)).toLocaleString()}</strong><span>nodes</span><strong>{(is3D ? 6 * model.mesh.nx * model.mesh.ny * (model.mesh.nz ?? 2) : 2 * model.mesh.nx * model.mesh.ny).toLocaleString()}</strong><span>{is3D ? 'tetrahedra' : 'triangles'}</span></div>
           </>}
           {isPolygon && <>
             <label className="field-label"><span>Refinement level <b>R{baseRefinement}</b></span><input aria-label="Polygon refinement" type="range" min="0" max="4" step="1" value={baseRefinement} onChange={(event) => onChange({ ...model, mesh: { ...model.mesh, refinement: Number(event.target.value) } })} /></label>
-            <div className="mesh-summary"><strong>{model.geometry.vertices.length}</strong><span>boundary vertices</span><strong>{((model.geometry.vertices.length - 2) * 4 ** baseRefinement).toLocaleString()}</strong><span>triangles</span></div>
+            <div className="mesh-summary"><strong>{model.geometry.domains.reduce((sum, domain) => sum + domain.vertices.length, 0)}</strong><span>domain vertices</span><strong>{(model.geometry.domains.reduce((sum, domain) => sum + domain.vertices.length - 2, 0) * 4 ** baseRefinement * (is3D ? 3 * (model.mesh.nz ?? 2) : 1)).toLocaleString()}</strong><span>{is3D ? 'tetrahedra' : 'triangles'}</span></div>
             <div className="property-row"><span>Element size</span><strong>h ÷ 2 per level</strong></div>
-            <div className="solver-note neutral"><ShieldCheck size={16} /><span>Red refinement preserves coarse node indices, enabling direct nested-grid convergence comparisons.</span></div>
+          </>}
+          {is3D && <>
+            <label className="field-label"><span>Z divisions <b>{model.mesh.nz ?? 2}</b></span><input aria-label="Z divisions" type="range" min="1" max="32" step="1" value={model.mesh.nz ?? 2} onChange={(event) => onChange({ ...model, mesh: { ...model.mesh, nz: Number(event.target.value) } })} /></label>
+            <div className="solver-note neutral"><ShieldCheck size={16} /><span>Every triangular prism is split into three positive-volume tetrahedra with matching face diagonals. Connected domains require identical Z extrusion.</span></div>
           </>}
         </Section>}
 
@@ -302,7 +311,7 @@ export function Inspector({ model, selected, result, stale, converging, selected
           <label className="field-label"><span>Study type</span><select aria-label="Study type" value={model.study.type} onChange={(event) => {
             const type = event.target.value as HeatModel['study']['type']
             onChange({ ...model, activePhysics: type === 'transient' ? 'heat' : model.activePhysics, study: { ...model.study, type } })
-          }}><option value="stationary">Stationary</option><option value="transient">Transient heat · implicit Euler</option></select></label>
+          }}><option value="stationary">Stationary{is3D ? ' · 3D heat FEM' : ''}</option><option value="transient" disabled={is3D}>Transient heat · implicit Euler{is3D ? ' · 2D only' : ''}</option></select></label>
           <label className="field-label"><span>Linear solver</span><select aria-label="Linear solver" value={model.study.solver} onChange={(event) => onChange({ ...model, study: { ...model.study, solver: event.target.value as HeatModel['study']['solver'] } })}><option value="iterative">Iterative conjugate gradients</option><option value="direct">Direct LDLᵀ · sparse</option></select></label>
           {model.study.solver === 'iterative' && <label className="field-label"><span>Preconditioner</span><select aria-label="Preconditioner" value={model.study.preconditioner} onChange={(event) => onChange({ ...model, study: { ...model.study, preconditioner: event.target.value as HeatModel['study']['preconditioner'] } })}><option value="jacobi">Jacobi</option><option value="ic0">Incomplete Cholesky · IC(0)</option></select></label>}
           <label className="field-label"><span>Matrix ordering</span><select aria-label="Matrix ordering" value={model.study.ordering} onChange={(event) => onChange({ ...model, study: { ...model.study, ordering: event.target.value as HeatModel['study']['ordering'] } })}><option value="rcm">Reverse Cuthill–McKee</option><option value="natural">Natural</option></select></label>
@@ -329,21 +338,21 @@ export function Inspector({ model, selected, result, stale, converging, selected
           <div className="solver-note neutral"><ShieldCheck size={16} /><span>Every case is schema-validated and solved independently. Geometry sweeps preserve all domains and conforming interfaces; select a result row to inspect its field.</span></div>
         </Section>}
 
-        {selected === 'convergence' && <Section eyebrow="Study 1 · Automation" title="Mesh convergence" description="Halve the element size at every level and estimate self-convergence from successive solutions.">
+        {selected === 'convergence' && <Section eyebrow="Study 1 · Automation" title="Mesh convergence" description={is3D ? 'Refine X, Y and Z together and compare nested tetrahedral solutions.' : 'Halve the element size at every level and estimate self-convergence from successive solutions.'}>
           <label className="field-label"><span>Grid levels</span><select value={model.convergence.levels} onChange={(e) => onChange({ ...model, convergence: { levels: Number(e.target.value) } })}><option value={2}>2 levels</option><option value={3}>3 levels · observed order</option><option value={4}>4 levels</option></select></label>
-          <label className="field-label"><span>Verification reference</span><select aria-label="Manufactured solution" value={model.study.manufacturedSolution} onChange={(event) => onChange({ ...model, study: { ...model.study, manufacturedSolution: event.target.value as HeatModel['study']['manufacturedSolution'] } })}><option value="none">Successive grids only</option><option value="scalarSine">Scalar sine · exact error</option><option value="logarithmic">Logarithmic heat · exact error</option></select></label>
-          <div className="property-row"><span>Sequence</span><strong>{isPolygon ? Array.from({ length: model.convergence.levels }, (_, i) => `R${baseRefinement + i}`).join(' → ') : Array.from({ length: model.convergence.levels }, (_, i) => model.mesh.nx * 2 ** i).join(' → ')}</strong></div>
-          <div className="property-row"><span>{isPolygon ? 'Finest mesh' : 'Finest divisions'}</span><strong>{isPolygon ? `${estimatedTriangles.toLocaleString()} triangles · R${finestRefinement}` : `${finestDivisions} max.`}</strong></div>
-          {convergenceTooLarge && <div className="validation-note">{isPolygon ? 'Reduce polygon refinement or levels: the finest mesh is limited to R5 and 100,000 triangles.' : 'Reduce the base mesh or levels: the finest grid is limited to 128 divisions per direction.'}</div>}
+          <label className="field-label"><span>Verification reference</span><select aria-label="Manufactured solution" value={is3D ? 'none' : model.study.manufacturedSolution} disabled={is3D} onChange={(event) => onChange({ ...model, study: { ...model.study, manufacturedSolution: event.target.value as HeatModel['study']['manufacturedSolution'] } })}><option value="none">Successive grids only</option>{!is3D && <><option value="scalarSine">Scalar sine · exact error</option><option value="logarithmic">Logarithmic heat · exact error</option></>}</select></label>
+          <div className="property-row"><span>Sequence</span><strong>{is3D ? Array.from({ length: model.convergence.levels }, (_, i) => isPolygon ? `R${baseRefinement + i} · Z${(model.mesh.nz ?? 2) * 2 ** i}` : `${model.mesh.nx * 2 ** i} × ${model.mesh.ny * 2 ** i} × ${(model.mesh.nz ?? 2) * 2 ** i}`).join(' → ') : isPolygon ? Array.from({ length: model.convergence.levels }, (_, i) => `R${baseRefinement + i}`).join(' → ') : Array.from({ length: model.convergence.levels }, (_, i) => model.mesh.nx * 2 ** i).join(' → ')}</strong></div>
+          <div className="property-row"><span>Finest mesh</span><strong>{is3D ? `${estimatedTetrahedra.toLocaleString()} tetrahedra · Z${finestZ}` : isPolygon ? `${estimatedTriangles.toLocaleString()} triangles · R${finestRefinement}` : `${finestDivisions} max.`}</strong></div>
+          {convergenceTooLarge && <div className="validation-note">{is3D ? 'Reduce the base mesh or levels: the finest mesh is limited to 100,000 tetrahedra and 32 Z divisions.' : isPolygon ? 'Reduce polygon refinement or levels: the finest mesh is limited to R5 and 100,000 triangles.' : 'Reduce the base mesh or levels: the finest grid is limited to 128 divisions per direction.'}</div>}
           <button className="study-button" disabled={converging || convergenceTooLarge} onClick={onRunConvergence}>{converging ? <LoaderCircle size={15} className="spin" /> : <TrendingUp size={15} />}{converging ? 'Running study…' : 'Run convergence study'}</button>
-          <div className="solver-note neutral"><ShieldCheck size={16} /><span>L2 differences compare successive grids; they are not exact-solution errors.</span></div>
+          <div className="solver-note neutral"><ShieldCheck size={16} /><span>L2 differences compare successive grids; they are not exact-solution errors. Manufactured 2D references are disabled in 3D.</span></div>
         </Section>}
 
-        {selected === 'adaptive' && <Section eyebrow="Study 1 · Automation" title="Error-guided adaptation" description="Recover nodal gradients, mark the largest element indicators and bisect while preserving a conforming mesh.">
-          <label className="field-label"><span>Adaptive levels</span><select value={model.adaptive.levels} onChange={(event) => onChange({ ...model, adaptive: { ...model.adaptive, levels: Number(event.target.value) } })}>{[1, 2, 3, 4, 5].map((level) => <option key={level} value={level}>{level}</option>)}</select></label>
-          <label className="field-label"><span>Marked fraction <b>{Math.round(model.adaptive.markFraction * 100)}%</b></span><input aria-label="Adaptive marked fraction" type="range" min="0.05" max="1" step="0.05" value={model.adaptive.markFraction} onChange={(event) => onChange({ ...model, adaptive: { ...model.adaptive, markFraction: Number(event.target.value) } })} /></label>
-          <button className="study-button" disabled={converging || model.activePhysics === 'elasticity' || model.study.type === 'transient'} onClick={onRunAdaptive}>{converging ? <LoaderCircle size={15} className="spin" /> : <TrendingUp size={15} />}Run adaptive study</button>
-          <div className="solver-note neutral"><ShieldCheck size={16} /><span>Available for stationary scalar physics. The indicator is not a guaranteed error bound; select a manufactured reference in Mesh convergence to also report exact errors.</span></div>
+        {selected === 'adaptive' && <Section eyebrow="Study 1 · Automation" title="Error-guided adaptation" description={is3D ? 'Local tetrahedral adaptation is not yet implemented; use uniform 3D mesh convergence.' : 'Recover nodal gradients, mark the largest element indicators and bisect while preserving a conforming mesh.'}>
+          <label className="field-label"><span>Adaptive levels</span><select disabled={is3D} value={model.adaptive.levels} onChange={(event) => onChange({ ...model, adaptive: { ...model.adaptive, levels: Number(event.target.value) } })}>{[1, 2, 3, 4, 5].map((level) => <option key={level} value={level}>{level}</option>)}</select></label>
+          <label className="field-label"><span>Marked fraction <b>{Math.round(model.adaptive.markFraction * 100)}%</b></span><input disabled={is3D} aria-label="Adaptive marked fraction" type="range" min="0.05" max="1" step="0.05" value={model.adaptive.markFraction} onChange={(event) => onChange({ ...model, adaptive: { ...model.adaptive, markFraction: Number(event.target.value) } })} /></label>
+          <button className="study-button" disabled={converging || is3D || model.activePhysics === 'elasticity' || model.study.type === 'transient'} onClick={onRunAdaptive}>{converging ? <LoaderCircle size={15} className="spin" /> : <TrendingUp size={15} />}Run adaptive study</button>
+          <div className="solver-note neutral"><ShieldCheck size={16} /><span>{is3D ? 'Available in 2D only. The 3D convergence study performs uniform tetrahedral refinement.' : 'Available for stationary scalar physics. The indicator is not a guaranteed error bound; select a manufactured reference in Mesh convergence to also report exact errors.'}</span></div>
         </Section>}
 
         {selected === 'results' && <Section eyebrow="Results" title="Export and provenance" description="Nodal values and mesh connectivity use open, documented formats.">

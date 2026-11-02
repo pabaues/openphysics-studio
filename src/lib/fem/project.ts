@@ -211,8 +211,19 @@ const v9ModelObject = v8ModelObject.extend({
     domains: z.array(domainV9Schema).min(1).max(16),
   }),
 })
+type V9Model = z.infer<typeof v9ModelObject>
+const thermalPhysicsV10Schema = thermalPhysicsSchema.extend({
+  front: thermalBoundarySchema.default({ type: 'insulated' }),
+  back: thermalBoundarySchema.default({ type: 'insulated' }),
+})
+const v10ModelObject = v9ModelObject.extend({
+  schemaVersion: z.literal(10), physics: thermalPhysicsV10Schema,
+  mesh: meshV5Schema.extend({ nz: z.number().int().min(1).max(32).default(2) }),
+})
 
-export const heatModelSchema = v9ModelObject.superRefine((model, context) => {
+export const heatModelSchema = v10ModelObject.superRefine((model, context) => {
+  if (model.geometry.dimension === '3d' && (model.activePhysics !== 'heat' || model.study.type !== 'stationary')) context.addIssue({ code: 'custom', message: 'The first 3D solver currently supports stationary Heat Transfer only. Use a 2D cross-section for other physics.' })
+  if (model.geometry.dimension === '3d' && model.study.manufacturedSolution !== 'none') context.addIssue({ code: 'custom', message: 'Manufactured 2D references are not available for 3D studies.' })
   if (model.study.type === 'transient' && model.activePhysics !== 'heat') context.addIssue({ code: 'custom', message: 'Transient studies currently require Heat Transfer.' })
   try {
     const normalized = multiDomainGeometry(model.geometry.domains, model.geometry)
@@ -295,28 +306,38 @@ function migrateV7(model: V7Model): V8Model {
   }
 }
 
-function migrateV8(model: V8Model): HeatModel {
-  return heatModelSchema.parse({ ...model, schemaVersion: 9, geometry: { ...model.geometry, dimension: '2d', depth: defaultModel.geometry.depth } })
+function migrateV8(model: V8Model): V9Model {
+  return { ...model, schemaVersion: 9, geometry: { ...model.geometry, dimension: '2d', depth: defaultModel.geometry.depth } }
+}
+
+function migrateV9(model: V9Model): HeatModel {
+  return heatModelSchema.parse({
+    ...model, schemaVersion: 10,
+    physics: { ...model.physics, front: { type: 'insulated' }, back: { type: 'insulated' } },
+    mesh: { ...model.mesh, nz: defaultModel.mesh.nz },
+  })
 }
 
 export function parseProjectJson(source: string): HeatModel {
   const json: unknown = JSON.parse(source)
   if (typeof json === 'object' && json !== null && 'schemaVersion' in json) {
+    if (json.schemaVersion === 10) return heatModelSchema.parse(json)
+    if (json.schemaVersion === 9) return migrateV9(v9ModelObject.parse(json))
     if (json.schemaVersion === 1) {
       const legacy = legacyModelSchema.parse(json)
-      return migrateV8(migrateV7(migrateV6(migrateV5(migrateV4(migrateV3(migrateV2({
+      return migrateV9(migrateV8(migrateV7(migrateV6(migrateV5(migrateV4(migrateV3(migrateV2({
         ...legacy, schemaVersion: 2, activePhysics: 'heat',
         material: { ...legacy.material, relativePermittivity: 1 },
         electrostatics: structuredClone(defaultModel.electrostatics), convergence: { levels: 3 },
-      })))))))
+      }))))))))
     }
-    if (json.schemaVersion === 2) return migrateV8(migrateV7(migrateV6(migrateV5(migrateV4(migrateV3(migrateV2(v2ModelSchema.parse(json))))))))
-    if (json.schemaVersion === 3) return migrateV8(migrateV7(migrateV6(migrateV5(migrateV4(migrateV3(v3ModelSchema.parse(json)))))))
-    if (json.schemaVersion === 4) return migrateV8(migrateV7(migrateV6(migrateV5(migrateV4(v4ModelSchema.parse(json))))))
-    if (json.schemaVersion === 5) return migrateV8(migrateV7(migrateV6(migrateV5(v5ModelSchema.parse(json)))))
-    if (json.schemaVersion === 6) return migrateV8(migrateV7(migrateV6(v6ModelSchema.parse(json))))
-    if (json.schemaVersion === 7) return migrateV8(migrateV7(v7ModelSchema.parse(json)))
-    if (json.schemaVersion === 8) return migrateV8(v8ModelObject.parse(json))
+    if (json.schemaVersion === 2) return migrateV9(migrateV8(migrateV7(migrateV6(migrateV5(migrateV4(migrateV3(migrateV2(v2ModelSchema.parse(json)))))))))
+    if (json.schemaVersion === 3) return migrateV9(migrateV8(migrateV7(migrateV6(migrateV5(migrateV4(migrateV3(v3ModelSchema.parse(json))))))))
+    if (json.schemaVersion === 4) return migrateV9(migrateV8(migrateV7(migrateV6(migrateV5(migrateV4(v4ModelSchema.parse(json)))))))
+    if (json.schemaVersion === 5) return migrateV9(migrateV8(migrateV7(migrateV6(migrateV5(v5ModelSchema.parse(json))))))
+    if (json.schemaVersion === 6) return migrateV9(migrateV8(migrateV7(migrateV6(v6ModelSchema.parse(json)))))
+    if (json.schemaVersion === 7) return migrateV9(migrateV8(migrateV7(v7ModelSchema.parse(json))))
+    if (json.schemaVersion === 8) return migrateV9(migrateV8(v8ModelObject.parse(json)))
   }
   return heatModelSchema.parse(json)
 }

@@ -66,7 +66,7 @@ export type SweepParameter =
   | 'electrostatics.rightVoltage'
 
 export interface HeatModel {
-  schemaVersion: 9
+  schemaVersion: 10
   name: string
   activePhysics: ActivePhysics
   geometry: {
@@ -87,6 +87,9 @@ export interface HeatModel {
     rightTemperature: number
     top: BoundaryCondition
     bottom: BoundaryCondition
+    /** Front (+Z) and back (−Z) faces are used by the 3D heat solver. */
+    front?: BoundaryCondition
+    back?: BoundaryCondition
   }
   electrostatics: {
     chargeDensity: number
@@ -124,6 +127,8 @@ export interface HeatModel {
   mesh: {
     nx: number
     ny: number
+    /** Z divisions for tetrahedral extrusion; ignored by 2D meshes. */
+    nz?: number
     refinement?: number
   }
   study: {
@@ -157,19 +162,23 @@ export interface HeatModel {
 export interface MeshNode {
   x: number
   y: number
+  /** Present only on three-dimensional mesh nodes. */
+  z?: number
 }
 
 export type Triangle = [number, number, number]
+export type Tetrahedron = [number, number, number, number]
 
 export interface BaseMesh {
-  kind: 'mapped' | 'unstructured'
+  kind: 'mapped' | 'unstructured' | 'tetrahedral'
   nodes: MeshNode[]
+  /** Surface triangles for tetrahedral meshes; volume elements otherwise. */
   triangles: Triangle[]
   width: number
   height: number
   centroid: MeshNode
   refinement: number
-  /** Geometry-domain index per triangle; omitted means domain 0 for legacy meshes. */
+  /** Geometry-domain index per surface/volume triangle. */
   triangleDomains?: number[]
 }
 
@@ -183,11 +192,22 @@ export interface UnstructuredMesh extends BaseMesh {
   kind: 'unstructured'
 }
 
-export type Mesh = RectangularMesh | UnstructuredMesh
+export interface TetrahedralMesh extends BaseMesh {
+  kind: 'tetrahedral'
+  tetrahedra: Tetrahedron[]
+  tetrahedronDomains: number[]
+  /** Volume-element index associated with each external surface triangle. */
+  triangleElements: number[]
+  nz: number
+  depth: number
+}
+
+export type Mesh = RectangularMesh | UnstructuredMesh | TetrahedralMesh
 
 export interface VectorValue {
   x: number
   y: number
+  z?: number
   magnitude: number
 }
 
@@ -305,7 +325,7 @@ export interface AdaptiveReport {
 }
 
 export const defaultModel: HeatModel = {
-  schemaVersion: 9,
+  schemaVersion: 10,
   name: 'Thermal plate study',
   activePhysics: 'heat',
   geometry: {
@@ -325,6 +345,8 @@ export const defaultModel: HeatModel = {
     rightTemperature: 80,
     top: { type: 'temperature', value: 20 },
     bottom: { type: 'temperature', value: 20 },
+    front: { type: 'insulated' },
+    back: { type: 'insulated' },
   },
   electrostatics: {
     chargeDensity: 0,
@@ -354,7 +376,7 @@ export const defaultModel: HeatModel = {
     bottom: { type: 'neumann', value: 0 },
   },
   edgeBoundaries: { heat: {}, electrostatics: {}, elasticity: {}, custom: {} },
-  mesh: { nx: 28, ny: 16, refinement: 1 },
+  mesh: { nx: 28, ny: 16, nz: 2, refinement: 1 },
   study: { type: 'stationary', solver: 'iterative', preconditioner: 'jacobi', ordering: 'rcm', manufacturedSolution: 'none', tolerance: 1e-9, maxIterations: 2000 },
   transient: { initialTemperature: 20, duration: 10, timeSteps: 100, outputSteps: 20 },
   sweep: { parameter: 'material.conductivity', values: [15, 45, 100] },

@@ -97,6 +97,7 @@ function solveScalarOnMesh(model: HeatModel, mesh?: Mesh): AnySimulationResult {
 
 export function runAdaptiveStudy(model: HeatModel): AdaptiveReport {
   const started = performance.now()
+  if (model.geometry.dimension === '3d') throw new Error('Local gradient-recovery adaptation is currently available in 2D only. Use a 3D convergence study for uniform tetrahedral refinement.')
   validateManufacturedModel(model)
   if (model.study.type === 'transient') throw new Error('Adaptive studies currently require stationary physics.')
   const entries: AdaptiveEntry[] = []

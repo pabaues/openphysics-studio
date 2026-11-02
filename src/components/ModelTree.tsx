@@ -25,6 +25,8 @@ export type NodeId =
   | 'right'
   | 'top'
   | 'bottom'
+  | 'front'
+  | 'back'
   | 'electrostatics'
   | 'electricLeft'
   | 'electricRight'
@@ -49,6 +51,7 @@ interface ModelTreeProps {
   hasResults: boolean
   activePhysics: ActivePhysics
   domains: GeometryDomain[]
+  dimension: '2d' | '3d'
   selectedDomain: number
   onSelectDomain: (index: number) => void
 }
@@ -75,12 +78,12 @@ function TreeGroup({ id, label, icon, selected, active, expanded, onToggle, onSe
   </div>
 }
 
-export function ModelTree({ selected, onSelect, hasResults, activePhysics, domains, selectedDomain, onSelectDomain }: ModelTreeProps) {
+export function ModelTree({ selected, onSelect, hasResults, activePhysics, domains, dimension, selectedDomain, onSelectDomain }: ModelTreeProps) {
   const [expanded, setExpanded] = useState<Record<GroupId, boolean>>({ geometry: true, heat: true, electrostatics: true, elasticity: true, study: true })
   const toggle = (id: GroupId) => setExpanded((current) => ({ ...current, [id]: !current[id] }))
   return (
     <aside className="model-tree" aria-label="Model builder">
-      <div className="panel-heading"><span>Model Builder</span><span className="tree-badge">2D</span></div>
+      <div className="panel-heading"><span>Model Builder</span><span className="tree-badge">{dimension.toUpperCase()}</span></div>
       <div className="tree-root"><ChevronDown size={13} /><CircleDot size={14} className="text-blue-600" /><span>Model 1</span><span className="tree-root-meta">Local</span></div>
       <div className="tree-items">
         <TreeGroup id="geometry" label="Geometry 1" icon={<Box size={15} />} selected={selected === 'geometry'} expanded={expanded.geometry} onToggle={toggle} onSelect={() => onSelect('geometry')}>
@@ -89,7 +92,7 @@ export function ModelTree({ selected, onSelect, hasResults, activePhysics, domai
         <button aria-label="Materials" className={`tree-item tree-standalone ${selected === 'material' ? 'selected' : ''}`} onClick={() => onSelect('material')}><Layers3 size={15} /><span>Materials</span><span className="tree-count">{domains.length}</span></button>
 
         <TreeGroup id="heat" label="Heat Transfer" icon={<Flame size={15} />} selected={selected === 'physics'} active={activePhysics === 'heat'} expanded={expanded.heat} onToggle={toggle} onSelect={() => onSelect('physics')}>
-          {(['left', 'right', 'top', 'bottom'] as const).map((boundary) => <button key={boundary} className={`tree-item child ${selected === boundary ? 'selected' : ''}`} onClick={() => onSelect(boundary)}>{boundary === 'top' || boundary === 'bottom' ? <Wind size={13} /> : <Thermometer size={13} />}<span>{boundary[0]!.toUpperCase() + boundary.slice(1)} boundary</span></button>)}
+          {(['left', 'right', 'top', 'bottom', ...(dimension === '3d' ? ['front', 'back'] as const : [])] as const).map((boundary) => <button key={boundary} className={`tree-item child ${selected === boundary ? 'selected' : ''}`} onClick={() => onSelect(boundary)}>{boundary === 'left' || boundary === 'right' ? <Thermometer size={13} /> : <Wind size={13} />}<span>{boundary[0]!.toUpperCase() + boundary.slice(1)} boundary</span></button>)}
         </TreeGroup>
 
         <TreeGroup id="electrostatics" label="Electrostatics" icon={<Zap size={15} />} selected={selected === 'electrostatics'} active={activePhysics === 'electrostatics'} expanded={expanded.electrostatics} onToggle={toggle} onSelect={() => onSelect('electrostatics')}>

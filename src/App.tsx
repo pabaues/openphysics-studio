@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { Geometry3DLoading } from '@/components/Geometry3DLoading'
 const Geometry3DCanvas = lazy(() => import('@/components/Geometry3DCanvas'))
+const Result3DCanvas = lazy(() => import('@/components/Result3DCanvas'))
 import { Check, CircleHelp, Download, FilePlus2, FolderOpen, Gauge, RotateCcw, Save, Waves } from 'lucide-react'
 import { AdaptivePanel } from '@/components/AdaptivePanel'
 import { ModelTree, type NodeId } from '@/components/ModelTree'
@@ -23,7 +24,7 @@ import './App.css'
 
 const initialModel = structuredClone(defaultModel)
 const initialSignature = modelSignature(initialModel)
-const thermalNodes: NodeId[] = ['physics', 'left', 'right', 'top', 'bottom']
+const thermalNodes: NodeId[] = ['physics', 'left', 'right', 'top', 'bottom', 'front', 'back']
 const electricNodes: NodeId[] = ['electrostatics', 'electricLeft', 'electricRight', 'electricTop', 'electricBottom']
 const structuralNodes: NodeId[] = ['elasticity', 'structuralLeft', 'structuralRight', 'structuralTop', 'structuralBottom']
 
@@ -220,12 +221,14 @@ function App() {
     }
   }
   const changePhysics = (physics: ActivePhysics) => {
+    if (model.geometry.dimension === '3d' && physics !== 'heat') { notify('The current 3D solver supports stationary Heat Transfer only.', 'error'); return }
     updateModel(modelForPhysics(physics))
     setQuantity(physics === 'heat' ? 'temperature' : physics === 'electrostatics' ? 'potential' : physics === 'custom' ? 'custom' : 'displacement')
     setSelected(physics === 'heat' ? 'physics' : physics === 'electrostatics' ? 'electrostatics' : physics === 'custom' ? 'custom' : 'elasticity')
     setRibbonTab('physics')
   }
   const selectNode = (node: NodeId) => {
+    if (model.geometry.dimension === '3d' && [...electricNodes, ...structuralNodes, 'custom' as NodeId].includes(node)) { notify('This physics is available for 2D models. The current 3D solver is stationary Heat Transfer.', 'error'); return }
     if (thermalNodes.includes(node) && model.activePhysics !== 'heat') updateModel(modelForPhysics('heat'))
     if (electricNodes.includes(node) && model.activePhysics !== 'electrostatics') updateModel(modelForPhysics('electrostatics'))
     if (structuralNodes.includes(node) && model.activePhysics !== 'elasticity') updateModel(modelForPhysics('elasticity'))
@@ -251,7 +254,7 @@ function App() {
     setSelectedDomain(index)
     setSelected('geometry')
     setRibbonTab('geometry')
-    setView('geometry')
+    setView(model.geometry.dimension === '3d' ? 'geometry3d' : 'geometry')
   }
   const selectBoundary = (side: BoundarySide) => {
     const suffix = side[0]!.toUpperCase() + side.slice(1)
@@ -302,7 +305,7 @@ function App() {
     <Ribbon model={model} activeTab={ribbonTab} busy={busy} computing={computing} converging={converging} stale={stale} hasResult={!!result} onTabChange={changeRibbonTab} onSelect={selectNode} onPhysicsChange={changePhysics} onPresetChange={choosePreset} onImportGeometry={importGeometry} onCompute={() => compute()} onExport={exportFile} />
 
     <main className="workspace">
-      <ModelTree selected={selected} onSelect={selectNode} hasResults={!!result && !stale} activePhysics={model.activePhysics} domains={model.geometry.domains} selectedDomain={selectedDomain} onSelectDomain={selectDomain} />
+      <ModelTree selected={selected} onSelect={selectNode} hasResults={!!result && !stale} activePhysics={model.activePhysics} domains={model.geometry.domains} dimension={model.geometry.dimension} selectedDomain={selectedDomain} onSelectDomain={selectDomain} />
       <Inspector model={model} selected={selected} result={displayResult} stale={stale} converging={converging} selectedDomain={selectedDomain} onSelectedDomainChange={setSelectedDomain} onChange={updateModel} onImportGeometry={importGeometry} onExport={exportFile} onRunConvergence={runConvergence} onRunAdaptive={runAdaptive} onRunSweep={runSweep} />
       <section className="center-panel">
         <div className="viewport-toolbar">
@@ -316,7 +319,7 @@ function App() {
           </>}
           <button className="icon-button" title="Reset model" onClick={() => loadModel(structuredClone(defaultModel))}><RotateCcw size={14} /></button>
         </div>
-        {view === 'geometry3d' ? <Suspense fallback={<Geometry3DLoading />}><Geometry3DCanvas model={model} selectedDomain={selectedDomain} onSelectDomain={(index) => { setSelectedDomain(index); setSelected('geometry'); setRibbonTab('geometry') }} /></Suspense> : <SimulationCanvas model={model} result={displayResult} view={view} quantity={quantity} showMesh={showMesh} stale={stale} selectedDomain={selectedDomain} onSelectDomain={selectDomain} onSelectBoundary={selectBoundary} />}
+        {view === 'geometry3d' ? <Suspense fallback={<Geometry3DLoading />}><Geometry3DCanvas model={model} selectedDomain={selectedDomain} onSelectDomain={(index) => { setSelectedDomain(index); setSelected('geometry'); setRibbonTab('geometry') }} /></Suspense> : model.geometry.dimension === '3d' && (view === 'mesh' || view === 'results') ? <Suspense fallback={<Geometry3DLoading />}><Result3DCanvas model={model} result={displayResult} view={view} quantity={quantity} showMesh={showMesh} /></Suspense> : <SimulationCanvas model={model} result={displayResult} view={view} quantity={quantity} showMesh={showMesh} stale={stale} selectedDomain={selectedDomain} onSelectDomain={selectDomain} onSelectBoundary={selectBoundary} />}
         {sweepReport && view === 'results' && <SweepPanel report={sweepReport} selectedCase={selectedCase} onSelect={(index) => {
           const selectedResult = sweepReport.cases[index]!.result
           setSelectedCase(index)
@@ -330,13 +333,13 @@ function App() {
           <div className="metric"><span>MINIMUM</span><strong>{displayResult ? metricMinimum.toExponential(3) : '—'} <small>{resultUnit}</small></strong></div>
           <div className="metric accent"><span>MAXIMUM</span><strong>{displayResult ? metricMaximum.toExponential(3) : '—'} <small>{resultUnit}</small></strong></div>
           <div className="metric"><span>FIELD AVERAGE</span><strong>{displayResult ? metricAverage.toExponential(3) : '—'} <small>{resultUnit}</small></strong></div>
-          <div className="metric"><span>MESH</span><strong>{displayResult ? displayResult.mesh.nodes.length.toLocaleString() : '—'} <small>nodes</small></strong></div>
+          <div className="metric"><span>MESH</span><strong>{displayResult ? displayResult.mesh.nodes.length.toLocaleString() : '—'} <small>nodes{displayResult?.mesh.kind === 'tetrahedral' ? ` · ${displayResult.mesh.tetrahedra.length.toLocaleString()} tetrahedra` : ''}</small></strong></div>
           <div className="metric solver-metric"><span>LINEAR SOLVER</span><strong className={displayResult?.converged ? 'converged' : 'not-converged'}>{displayResult ? displayResult.solver === 'direct' ? 'DIRECT LDLᵀ' : 'ITERATIVE CG' : '—'}</strong><small>{displayResult ? `${displayResult.converged ? 'Converged' : 'Check residual'} · ${displayResult.solver === 'iterative' ? `${displayResult.iterations} iterations · ` : ''}${displayResult.relativeResidual.toExponential(1)} residual` : 'Not solved'}</small></div>
         </div>
       </section>
     </main>
 
-    <footer className="status-bar"><span className={`status-indicator ${result?.converged && !stale ? 'ok' : ''}`} /><span>{converging ? 'Running successive mesh studies…' : computing ? 'Assembling and solving…' : stale ? 'Results need updating' : result?.converged ? 'Study completed successfully' : 'Ready'}</span><span className="status-divider">|</span><span>{model.geometry.dimension === '3d' ? '3D geometry · 2D physics' : '2D'} · {physicsName}</span><div className="header-spacer" /><Gauge size={12} /><span>{result ? `${result.solveTimeMs.toFixed(1)} ms` : '—'}</span><span className="status-divider">|</span><span>Local session</span><Download size={12} /><span>Open data</span></footer>
+    <footer className="status-bar"><span className={`status-indicator ${result?.converged && !stale ? 'ok' : ''}`} /><span>{converging ? 'Running successive mesh studies…' : computing ? 'Assembling and solving…' : stale ? 'Results need updating' : result?.converged ? 'Study completed successfully' : 'Ready'}</span><span className="status-divider">|</span><span>{model.geometry.dimension === '3d' ? '3D · stationary tetrahedral heat FEM' : '2D'} · {physicsName}</span><div className="header-spacer" /><Gauge size={12} /><span>{result ? `${result.solveTimeMs.toFixed(1)} ms` : '—'}</span><span className="status-divider">|</span><span>Local session</span><Download size={12} /><span>Open data</span></footer>
     {toast && <div className={`toast ${toast.type}`} role="status">{toast.type === 'success' ? <Check size={16} /> : <CircleHelp size={16} />}{toast.text}</div>}
   </div>
 }

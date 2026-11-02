@@ -85,19 +85,19 @@ export function createExampleModel(id: ExamplePresetId): HeatModel {
   if (id === 'pinPhotodetector' || id === 'pnModulator') return layeredPhotonicModel(id)
   const next = structuredClone(defaultModel)
   if (id === 'block3d') {
-    next.name = '3D layered block · extruded cross-section'
+    next.name = '3D layered block · stationary heat FEM'
     next.geometry = multiDomainGeometry([
       { id: 'domain-1', name: 'Structural base', depth: 0.03, z: 0, vertices: [{ x: 0, y: 0 }, { x: 0.08, y: 0 }, { x: 0.08, y: 0.02 }, { x: 0, y: 0.02 }] },
-      { id: 'domain-2', name: 'Conductive layer', depth: 0.02, z: 0.005, vertices: [{ x: 0, y: 0.02 }, { x: 0.08, y: 0.02 }, { x: 0.08, y: 0.035 }, { x: 0, y: 0.035 }] },
-      { id: 'domain-3', name: 'Protective cap', depth: 0.012, z: 0.009, vertices: [{ x: 0, y: 0.035 }, { x: 0.08, y: 0.035 }, { x: 0.08, y: 0.045 }, { x: 0, y: 0.045 }] },
+      { id: 'domain-2', name: 'Conductive layer', depth: 0.03, z: 0, vertices: [{ x: 0, y: 0.02 }, { x: 0.08, y: 0.02 }, { x: 0.08, y: 0.035 }, { x: 0, y: 0.035 }] },
+      { id: 'domain-3', name: 'Protective cap', depth: 0.03, z: 0, vertices: [{ x: 0, y: 0.035 }, { x: 0.08, y: 0.035 }, { x: 0.08, y: 0.045 }, { x: 0, y: 0.045 }] },
     ], { dimension: '3d', depth: 0.03 })
     next.material = { ...next.material, conductivity: 45, youngsModulus: 200e9 }
     next.domainMaterials = {
       'domain-2': { ...structuredClone(next.material), conductivity: 385, relativePermittivity: 1 },
       'domain-3': { ...structuredClone(next.material), conductivity: 1.4, relativePermittivity: 4.2 },
     }
-    next.physics = { heatSource: 0, leftTemperature: 80, rightTemperature: 20, top: { type: 'insulated' }, bottom: { type: 'insulated' } }
-    next.mesh = { nx: 20, ny: 12, refinement: 2 }
+    next.physics = { heatSource: 0, leftTemperature: 80, rightTemperature: 20, top: { type: 'insulated' }, bottom: { type: 'insulated' }, front: { type: 'insulated' }, back: { type: 'insulated' } }
+    next.mesh = { nx: 20, ny: 12, nz: 4, refinement: 2 }
   }
   if (id === 'bar') {
     next.name = 'Insulated conduction bar'

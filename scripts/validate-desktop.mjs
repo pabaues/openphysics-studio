@@ -56,9 +56,16 @@ try {
   await page.locator('.compute-button').click()
   await page.waitForFunction(() => !document.querySelector('.outdated-label'), { timeout: 60000 })
   await page.screenshot({ path: path.join(output, 'openphysics-desktop-photonics.png'), fullPage: true })
+  await page.getByLabel('Example model').selectOption('block3d')
+  await page.waitForFunction(() => document.querySelector('.document-name')?.value === '3D layered block · stationary heat FEM' && !document.querySelector('.outdated-label'), { timeout: 60000 })
+  assert.equal(await page.locator('.tree-badge').textContent(), '3D')
+  await page.locator('.compute-button').click()
+  await page.waitForFunction(() => !document.querySelector('.outdated-label') && document.querySelector('[data-testid="tetrahedral-3d"]'), { timeout: 60000 })
+  assert(await page.locator('.metrics-strip').textContent().then((text) => text.includes('tetrahedra')))
+  await page.screenshot({ path: path.join(output, 'openphysics-desktop-3d.png'), fullPage: true })
   assert.deepEqual(errors, [], `Desktop browser errors:\n${errors.join('\n')}`)
-  console.log(`Desktop validation passed (${metadata.packaged ? 'packaged executable' : 'unpacked application'}, version ${metadata.version}), including the editable PIN template.`)
-  console.log(`Screenshots: ${path.join(output, 'openphysics-desktop-app.png')}, ${path.join(output, 'openphysics-desktop-photonics.png')}`)
+  console.log(`Desktop validation passed (${metadata.packaged ? 'packaged executable' : 'unpacked application'}, version ${metadata.version}), including the editable PIN template and tetrahedral 3D heat FEM.`)
+  console.log(`Screenshots: ${path.join(output, 'openphysics-desktop-app.png')}, ${path.join(output, 'openphysics-desktop-photonics.png')}, ${path.join(output, 'openphysics-desktop-3d.png')}`)
 } finally {
   if (application) await application.close()
 }
