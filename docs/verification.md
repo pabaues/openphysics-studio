@@ -92,11 +92,17 @@ El módulo WASM se genera de forma reproducible desde `dot.wat`, se instancia s�
 
 Las tolerancias geométricas, de triangulación, unión de nodos y detección de frontera son relativas al tamaño del modelo para admitir dimensiones nanométricas. La comparación de mallas no estructuradas usa coordenadas físicas anidadas: los índices globales multidominio pueden cambiar al insertar nodos por dominio y no son una correspondencia válida por sí solos. Estas pruebas verifican electrostática, no propagación óptica ni transporte de portadores.
 
+## Geometría 3D prismática
+
+El visor Three.js construye un `ExtrudeGeometry` real por dominio a partir del polígono validado, con profundidad y centro Z independientes. El ensayo de navegador abre el bloque de tres capas, edita esos parámetros, ejercita las vistas isométrica/frontal/superior/ajuste y alámbrica, exporta el JSON v9 y lo reimporta comprobando que los valores permanecen. Las pruebas unitarias comprueban migración v8→v9, round-trip de extrusiones, límites de entrada y conservación al escalar el bounding box.
+
+Estas pruebas validan modelado y persistencia geométrica, **no elementos finitos 3D**. La malla y todas las físicas continúan usando la sección 2D.
+
 ## Geometría, persistencia y navegador
 
-La suite también comprueba importación/normalización SVG/CSV, rechazo de auto-intersecciones, refinamiento rojo, campos afines en mallas no estructuradas, integración P1, sondas, barridos y exportadores. `project.test.ts` recorre migraciones aditivas v1→v8, incluida v7→v8, firmas estables y validación geométrica.
+La suite también comprueba importación/normalización SVG/CSV, rechazo de auto-intersecciones, refinamiento rojo, campos afines en mallas no estructuradas, integración P1, sondas, barridos y exportadores. `project.test.ts` recorre migraciones aditivas v1→v9, incluidas v7→v8 y v8→v9, firmas estables y validación geométrica.
 
-El ensayo de navegador cubre Worker, invalidación de respuestas obsoletas, ambos solvers, IC(0), RCM/natural, ecuación personalizada, error exacto, adaptación, transitorios, polígonos, geometría multidominio conectada y disjunta, edición de materiales por dominio, elasticidad, barridos y descargas. También verifica las pestañas de flujo de trabajo, plegado y expansión del árbol, selección de dominios desde el SVG, apertura de fronteras desde Graphics y los controles reales de zoom/ajuste. En PIN y PN edita nombre de dominio, bounding box, área activa, permitividad y potencial; después recalcula, ejecuta convergencia y realiza un barrido de polarización. Las capturas se guardan fuera del repositorio y el servidor temporal se detiene.
+El ensayo de navegador cubre Worker, invalidación de respuestas obsoletas, ambos solvers, IC(0), RCM/natural, ecuación personalizada, error exacto, adaptación, transitorios, polígonos, geometría multidominio conectada y disjunta, edición de materiales por dominio, elasticidad, barridos y descargas. También verifica las pestañas de flujo de trabajo, plegado y expansión del árbol, selección de dominios desde el SVG, apertura de fronteras desde Graphics, los controles reales de zoom/ajuste y el visor 3D. En PIN y PN edita nombre de dominio, bounding box, área activa, permitividad y potencial; después recalcula, ejecuta convergencia y realiza un barrido de polarización. Las capturas se guardan fuera del repositorio y el servidor temporal se detiene.
 
 ## Aplicación de escritorio y release
 
@@ -109,7 +115,7 @@ El paquete comunitario no está firmado digitalmente y no contiene actualizador 
 ## Límites actuales
 
 - Hasta 16 dominios poligonales 2D, cada uno con un material isotrópico, y triángulos P1. Las interfaces deben compartir aristas completas coincidentes; no hay particionado automático de geometrías.
-- Sin CAD, agujeros, curvas, axisimetría, 3D, elementos de orden superior ni h/p adaptativo.
+- La geometría 3D se limita a extrusiones prismáticas; sin CAD 3D general, mallas tetraédricas ni solvers 3D. Sin agujeros, curvas, axisimetría, elementos de orden superior ni h/p adaptativo.
 - Acoplamiento térmico–estructural solo unidireccional y estacionario.
 - Ecuación personalizada de coeficientes constantes; sin parser de expresiones ni plugins. Las referencias manufacturadas se limitan a un dominio.
 - Sin no linealidad, contacto, dinámica estructural, autovalores, frecuencia, CFD o sistemas algebraicos generales.

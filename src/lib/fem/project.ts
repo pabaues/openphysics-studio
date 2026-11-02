@@ -184,26 +184,38 @@ const v7ModelSchema = v7ModelObject.superRefine((model, context) => {
 type V7Model = z.infer<typeof v7ModelSchema>
 
 const domainSchema = z.object({ id: z.string().regex(/^domain-[A-Za-z0-9_-]+$/), name: z.string().trim().min(1).max(80), vertices: z.array(vertexSchema).min(3).max(256) })
+const domainV9Schema = domainSchema.extend({
+  depth: z.number().min(1e-9).max(1000).optional(),
+  z: z.number().finite().min(-1000).max(1000).optional(),
+})
 const materialV8Schema = v7ModelObject.shape.material
+const sweepV8Schema = v7ModelObject.shape.sweep.extend({
+  parameter: z.enum([
+    'geometry.width', 'geometry.height', 'material.conductivity', 'material.relativePermittivity', 'material.youngsModulus',
+    'physics.heatSource', 'electrostatics.chargeDensity', 'electrostatics.leftVoltage', 'electrostatics.rightVoltage',
+  ]),
+})
+const geometryV8Schema = z.object({
+  shape: z.enum(['rectangle', 'polygon']), width: z.number().positive().max(1000), height: z.number().positive().max(1000),
+  vertices: z.array(vertexSchema).min(3).max(256), domains: z.array(domainSchema).min(1).max(16),
+})
 const v8ModelObject = v7ModelObject.extend({
-  schemaVersion: z.literal(8),
-  geometry: z.object({
-    shape: z.enum(['rectangle', 'polygon']), width: z.number().positive().max(1000), height: z.number().positive().max(1000),
-    vertices: z.array(vertexSchema).min(3).max(256), domains: z.array(domainSchema).min(1).max(16),
-  }),
-  domainMaterials: z.record(z.string(), materialV8Schema),
-  sweep: v7ModelObject.shape.sweep.extend({
-    parameter: z.enum([
-      'geometry.width', 'geometry.height', 'material.conductivity', 'material.relativePermittivity', 'material.youngsModulus',
-      'physics.heatSource', 'electrostatics.chargeDensity', 'electrostatics.leftVoltage', 'electrostatics.rightVoltage',
-    ]),
+  schemaVersion: z.literal(8), geometry: geometryV8Schema,
+  domainMaterials: z.record(z.string(), materialV8Schema), sweep: sweepV8Schema,
+})
+type V8Model = z.infer<typeof v8ModelObject>
+const v9ModelObject = v8ModelObject.extend({
+  schemaVersion: z.literal(9),
+  geometry: geometryV8Schema.extend({
+    dimension: z.enum(['2d', '3d']), depth: z.number().min(1e-9).max(1000),
+    domains: z.array(domainV9Schema).min(1).max(16),
   }),
 })
 
-export const heatModelSchema = v8ModelObject.superRefine((model, context) => {
+export const heatModelSchema = v9ModelObject.superRefine((model, context) => {
   if (model.study.type === 'transient' && model.activePhysics !== 'heat') context.addIssue({ code: 'custom', message: 'Transient studies currently require Heat Transfer.' })
   try {
-    const normalized = multiDomainGeometry(model.geometry.domains)
+    const normalized = multiDomainGeometry(model.geometry.domains, model.geometry)
     const tolerance = Math.max(model.geometry.width, model.geometry.height) * 1e-9
     if (Math.abs(normalized.width - model.geometry.width) > tolerance || Math.abs(normalized.height - model.geometry.height) > tolerance) context.addIssue({ code: 'custom', message: 'Geometry dimensions must match the multidomain bounding box.' })
     model.geometry.domains.forEach((domain, domainIndex) => domain.vertices.forEach((vertex, vertexIndex) => {
@@ -275,7 +287,7 @@ function migrateV6(model: V6Model): V7Model {
   }
 }
 
-function migrateV7(model: V7Model): HeatModel {
+function migrateV7(model: V7Model): V8Model {
   return {
     ...model, schemaVersion: 8,
     geometry: { ...model.geometry, domains: [{ id: 'domain-1', name: 'Domain 1', vertices: structuredClone(model.geometry.vertices) }] },
@@ -283,23 +295,28 @@ function migrateV7(model: V7Model): HeatModel {
   }
 }
 
+function migrateV8(model: V8Model): HeatModel {
+  return heatModelSchema.parse({ ...model, schemaVersion: 9, geometry: { ...model.geometry, dimension: '2d', depth: defaultModel.geometry.depth } })
+}
+
 export function parseProjectJson(source: string): HeatModel {
   const json: unknown = JSON.parse(source)
   if (typeof json === 'object' && json !== null && 'schemaVersion' in json) {
     if (json.schemaVersion === 1) {
       const legacy = legacyModelSchema.parse(json)
-      return migrateV7(migrateV6(migrateV5(migrateV4(migrateV3(migrateV2({
+      return migrateV8(migrateV7(migrateV6(migrateV5(migrateV4(migrateV3(migrateV2({
         ...legacy, schemaVersion: 2, activePhysics: 'heat',
         material: { ...legacy.material, relativePermittivity: 1 },
         electrostatics: structuredClone(defaultModel.electrostatics), convergence: { levels: 3 },
-      }))))))
+      })))))))
     }
-    if (json.schemaVersion === 2) return migrateV7(migrateV6(migrateV5(migrateV4(migrateV3(migrateV2(v2ModelSchema.parse(json)))))))
-    if (json.schemaVersion === 3) return migrateV7(migrateV6(migrateV5(migrateV4(migrateV3(v3ModelSchema.parse(json))))))
-    if (json.schemaVersion === 4) return migrateV7(migrateV6(migrateV5(migrateV4(v4ModelSchema.parse(json)))))
-    if (json.schemaVersion === 5) return migrateV7(migrateV6(migrateV5(v5ModelSchema.parse(json))))
-    if (json.schemaVersion === 6) return migrateV7(migrateV6(v6ModelSchema.parse(json)))
-    if (json.schemaVersion === 7) return migrateV7(v7ModelSchema.parse(json))
+    if (json.schemaVersion === 2) return migrateV8(migrateV7(migrateV6(migrateV5(migrateV4(migrateV3(migrateV2(v2ModelSchema.parse(json))))))))
+    if (json.schemaVersion === 3) return migrateV8(migrateV7(migrateV6(migrateV5(migrateV4(migrateV3(v3ModelSchema.parse(json)))))))
+    if (json.schemaVersion === 4) return migrateV8(migrateV7(migrateV6(migrateV5(migrateV4(v4ModelSchema.parse(json))))))
+    if (json.schemaVersion === 5) return migrateV8(migrateV7(migrateV6(migrateV5(v5ModelSchema.parse(json)))))
+    if (json.schemaVersion === 6) return migrateV8(migrateV7(migrateV6(v6ModelSchema.parse(json))))
+    if (json.schemaVersion === 7) return migrateV8(migrateV7(v7ModelSchema.parse(json)))
+    if (json.schemaVersion === 8) return migrateV8(v8ModelObject.parse(json))
   }
   return heatModelSchema.parse(json)
 }

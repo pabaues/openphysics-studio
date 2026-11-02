@@ -49,6 +49,7 @@ OpenPhysics Studio is a clean-room, open-source multiphysics workbench. It runs 
 ### Geometry, domains and meshing
 
 - Parametric rectangles, simple 2D polygons and up to 16 independent polygon domains, including concave boundaries and dimensions down to 1 nm.
+- Interactive prismatic 3D modeling: extrude each section with independent depth and Z position, orbit/pan/zoom, select solids, and use isometric/front/top/fit or wireframe views. The editable **3D layered block** preset demonstrates three domains. Physics and meshing remain 2D cross-sectional; no 3D FEM is implied.
 - Editable global bounding box and active-domain area for every geometry; whole-model scaling preserves domain/material assignments and conforming interfaces.
 - Conforming multidomain meshes: matching full edges become continuous interfaces with shared nodes; disconnected regions and vertex-only contacts are supported.
 - Per-domain isotropic materials for heat, electrostatics, transient studies, elasticity and one-way thermal coupling.
@@ -74,7 +75,7 @@ OpenPhysics Studio is a clean-room, open-source multiphysics workbench. It runs 
 - True relative residuals and convergence state; warm starts for transient steps.
 - A synchronous WebAssembly dot-product kernel with JavaScript fallback. It is only a kernel, not a full WASM solver; no speedup is claimed without a workload-specific benchmark.
 - Compute, convergence, adaptation and sweeps run sequentially in one persistent Web Worker. Edits logically invalidate stale responses but do not immediately cancel an active calculation.
-- Schema v8 projects with additive migration from v1–v7 and stable model signatures.
+- Schema v9 projects with additive migration from v1–v8, persistent per-domain 3D extrusion settings and stable model signatures.
 
 All models and results stay on the local machine. No backend is required.
 
@@ -164,7 +165,7 @@ npm run test:ui
 npm run test:desktop  # Windows; validates startup and a real computation
 ```
 
-The UI check starts a temporary server on port 7101, drives Chrome or Edge through both solver families, Web Worker execution, stale-response invalidation, thermal/transient/electrostatic/structural/custom workflows, manufactured convergence, adaptation, IC(0), polygon import, connected/disconnected multidomain editing, per-domain materials, both editable photonic templates, convergence, bias sweeps and downloads. It saves screenshots outside the repository and stops the server. Set `CHROME_PATH` or `UI_TEST_PORT` when needed.
+The UI check starts a temporary server on port 7101, drives Chrome or Edge through both solver families, Web Worker execution, stale-response invalidation, thermal/transient/electrostatic/structural/custom workflows, manufactured convergence, adaptation, IC(0), polygon import, connected/disconnected multidomain editing, per-domain materials, both editable photonic templates, convergence, bias sweeps and downloads. For 3D it checks WebGL solid selection, camera controls, wireframe, depth/Z editing and JSON v9 round-trip. It saves screenshots outside the repository and stops the server. Set `CHROME_PATH` or `UI_TEST_PORT` when needed.
 
 See [verification models, analytical benchmarks and tolerances](docs/verification.md) for the exact verification contract.
 
@@ -179,7 +180,7 @@ The adaptive recovery indicator guides refinement but is **not a guaranteed erro
 - Up to 16 simple polygon domains with one isotropic material each, P1 triangles and per-unit-depth physics.
 - Interfaces require complete matching edges; there is no automatic geometry partitioning, multidomain file import or general nonconforming-interface coupling.
 - Spatial material variation is linear; field-dependent properties, anisotropy and nonlinear materials are absent.
-- No holes, multiple subpaths, curves, CAD, Boolean geometry, axisymmetry or 3D.
+- 3D is limited to prismatic extrusion and visualization; there is no general CAD 3D, tetrahedral meshing or 3D solver. No holes, multiple subpaths, curves, Boolean geometry or axisymmetry.
 - Thermal coupling is one-way and stationary; no strongly coupled block solve or multiphysics iteration.
 - Custom PDE coefficients/source are constant except for the built-in manufactured-sine source; there is no expression parser or plug-in SDK.
 - No higher-order elements, nonlinear/contact/dynamic mechanics, CFD, acoustics, eigenvalue or frequency-domain studies.

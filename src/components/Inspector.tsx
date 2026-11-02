@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Download, FileJson, FileText, FileUp, Info, LoaderCircle, Play, ShieldCheck, TrendingUp } from 'lucide-react'
 import type { NodeId } from './ModelTree'
-import { multiDomainGeometry, rectangleGeometry, scaleGeometryToBoundingBox, scaleGeometryToDomainArea, signedPolygonArea } from '@/lib/fem/geometry'
+import { domainExtrusion, geometryVolume, multiDomainGeometry, rectangleGeometry, scaleGeometryToBoundingBox, scaleGeometryToDomainArea, signedPolygonArea } from '@/lib/fem/geometry'
 import { boundaryOverrideKey } from '@/lib/fem/boundary'
 import { materialForDomain } from '@/lib/fem/properties'
 import { near } from '@/lib/fem/scalar'
@@ -135,11 +135,12 @@ export function Inspector({ model, selected, result, stale, converging, selected
     const gap = model.geometry.width * 0.1
     const width = model.geometry.width * 0.5
     const x = model.geometry.width + gap
+    const extrusion = domainExtrusion(model.geometry, domainIndex)
     let sequence = model.geometry.domains.length + 1
     while (model.geometry.domains.some((domain) => domain.id === `domain-${sequence}`)) sequence += 1
     const id = `domain-${sequence}`
-    const domain = { id, name: `Domain ${sequence}`, vertices: [{ x, y: 0 }, { x: x + width, y: 0 }, { x: x + width, y: model.geometry.height }, { x, y: model.geometry.height }] }
-    onChange({ ...model, geometry: multiDomainGeometry([...model.geometry.domains, domain]), domainMaterials: { ...model.domainMaterials, [id]: structuredClone(activeMaterial) } })
+    const domain = { id, name: `Domain ${sequence}`, ...extrusion, vertices: [{ x, y: 0 }, { x: x + width, y: 0 }, { x: x + width, y: model.geometry.height }, { x, y: model.geometry.height }] }
+    onChange({ ...model, geometry: multiDomainGeometry([...model.geometry.domains, domain], model.geometry), domainMaterials: { ...model.domainMaterials, [id]: structuredClone(activeMaterial) } })
     onSelectedDomainChange(model.geometry.domains.length)
   }
   const removeDomain = () => {
@@ -149,7 +150,7 @@ export function Inspector({ model, selected, result, stale, converging, selected
     delete domainMaterials[activeDomain.id]
     const material = domainIndex === 0 ? materialForDomain(model, 1) : model.material
     if (domainIndex === 0) delete domainMaterials[retained[0]!.id]
-    onChange({ ...model, material, geometry: multiDomainGeometry(retained), domainMaterials })
+    onChange({ ...model, material, geometry: multiDomainGeometry(retained, model.geometry), domainMaterials })
     onSelectedDomainChange(0)
   }
   const updatePhysics = (patch: Partial<HeatModel['physics']>) => onChange({ ...model, activePhysics: 'heat', physics: { ...model.physics, ...patch } })
@@ -178,7 +179,8 @@ export function Inspector({ model, selected, result, stale, converging, selected
     <aside className="inspector" aria-label="Settings">
       <div className="panel-heading"><span>Settings</span><Info size={14} /></div>
       <div className="inspector-scroll">
-        {selected === 'geometry' && <Section eyebrow="Geometry sequence" title={model.geometry.domains.length > 1 ? `${model.geometry.domains.length} geometry domains` : isPolygon ? 'Simple polygon' : 'Parametric rectangle'} description="Independent polygon domains share nodes only across complete matching edges.">
+        {selected === 'geometry' && <Section eyebrow="Geometry sequence" title={model.geometry.domains.length > 1 ? `${model.geometry.domains.length} geometry domains` : isPolygon ? 'Simple polygon' : 'Parametric rectangle'} description="Build 2D sections or extrude each domain into an independent prismatic solid.">
+          <label className="field-label"><span>Geometry dimension</span><select aria-label="Geometry dimension" value={model.geometry.dimension} onChange={(event) => onChange({ ...model, geometry: { ...model.geometry, dimension: event.target.value as '2d' | '3d' } })}><option value="2d">2D cross-section</option><option value="3d">3D extrusion</option></select></label>
           <label className="field-label"><span>Active domain</span><select aria-label="Active domain" value={domainIndex} onChange={(event) => onSelectedDomainChange(Number(event.target.value))}>{model.geometry.domains.map((domain, index) => <option key={domain.id} value={index}>{domain.name}</option>)}</select></label>
           <label className="field-label"><span>Active domain name</span><input aria-label="Active domain name" className="text-field" value={activeDomain.name} maxLength={80} onChange={(event) => {
             const domains = model.geometry.domains.map((domain, index) => index === domainIndex ? { ...domain, name: event.target.value } : domain)
@@ -187,8 +189,21 @@ export function Inspector({ model, selected, result, stale, converging, selected
           <NumberField label="Global bounding box width" value={model.geometry.width} unit="m" min={1e-9} max={1000} step={1e-6} onChange={(width) => onChange({ ...model, geometry: scaleGeometryToBoundingBox(model.geometry, width, model.geometry.height) })} />
           <NumberField label="Global bounding box height" value={model.geometry.height} unit="m" min={1e-9} max={1000} step={1e-6} onChange={(height) => onChange({ ...model, geometry: scaleGeometryToBoundingBox(model.geometry, model.geometry.width, height) })} />
           <NumberField label="Active domain area" value={signedPolygonArea(activeDomain.vertices)} unit="m²" min={1e-24} max={1e6} step={1e-12} onChange={(area) => onChange({ ...model, geometry: scaleGeometryToDomainArea(model.geometry, domainIndex, area) })} />
+          {model.geometry.dimension === '3d' && <>
+            <NumberField label="Default extrusion depth" value={model.geometry.depth} unit="m" min={1e-9} max={1000} step={1e-6} onChange={(depth) => onChange({ ...model, geometry: { ...model.geometry, depth } })} />
+            <NumberField label="Active domain depth" value={domainExtrusion(model.geometry, domainIndex).depth} unit="m" min={1e-9} max={1000} step={1e-6} onChange={(depth) => {
+              const domains = model.geometry.domains.map((domain, index) => index === domainIndex ? { ...domain, depth } : domain)
+              onChange({ ...model, geometry: { ...model.geometry, domains } })
+            }} />
+            <NumberField label="Active domain center Z" value={domainExtrusion(model.geometry, domainIndex).z} unit="m" min={-1000} max={1000} step={1e-6} onChange={(z) => {
+              const domains = model.geometry.domains.map((domain, index) => index === domainIndex ? { ...domain, z } : domain)
+              onChange({ ...model, geometry: { ...model.geometry, domains } })
+            }} />
+            <div className="property-row"><span>Active solid volume</span><strong>{geometryVolume(model.geometry, domainIndex).toExponential(4)} m³</strong></div>
+            <div className="solver-note neutral"><Info size={16} /><span>The viewport shows actual extruded solids. Meshing and physics still solve the 2D cross-section; depth and Z do not create 3D finite elements.</span></div>
+          </>}
           <div className="property-row"><span>Domain vertices</span><strong>{activeDomain.vertices.length}</strong></div>
-          {isPolygon && model.geometry.domains.length === 1 && <button className="export-button" onClick={() => onChange({ ...model, geometry: rectangleGeometry(model.geometry.width, model.geometry.height) })}>Use parametric rectangle</button>}
+          {isPolygon && model.geometry.domains.length === 1 && <button className="export-button" onClick={() => onChange({ ...model, geometry: rectangleGeometry(model.geometry.width, model.geometry.height, model.geometry.depth, model.geometry.dimension) })}>Use parametric rectangle</button>}
           <div className="solver-note neutral"><Info size={16} /><span>Area edits scale the whole model uniformly to preserve conforming interfaces. Bounding-box edits scale all domains in X and Y.</span></div>
           {isPhotonicTemplate && <div className="solver-note neutral"><Info size={16} /><span>Reduced-order electrostatic template: p/i/n labels describe geometry only; optical propagation and carrier transport are not solved.</span></div>}
           <button className="study-button" disabled={model.geometry.domains.length >= 16} onClick={addDomain}>Add disconnected rectangle domain</button>

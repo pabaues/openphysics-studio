@@ -166,6 +166,21 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .export-button b { margin-left: auto; font-size: 8px; color: #94a3b8; }
 .inspector-foot { padding: 10px 12px; border-top: 1px solid var(--border); color: #a0aec0; text-align: center; font-size: 8px; letter-spacing: .2px; }
 
+.geometry-3d { position: relative; flex: 1; min-height: 250px; display: flex; flex-direction: column; overflow: hidden; background: #f4f6f8; }
+.geometry-3d-toolbar { position: absolute; z-index: 2; top: 12px; left: 12px; right: 12px; display: flex; align-items: center; gap: 5px; pointer-events: none; }
+.geometry-3d-toolbar > span { display: flex; align-items: center; gap: 7px; margin-right: auto; padding: 7px 10px; border: 1px solid #dbe3ea; border-radius: 5px; background: #ffffffeb; color: #334155; font-size: 10px; font-weight: 650; box-shadow: 0 2px 8px #23374a0d; }
+.geometry-3d-toolbar button { pointer-events: auto; display: flex; align-items: center; gap: 4px; height: 30px; padding: 0 9px; border: 1px solid #d5dfe7; border-radius: 4px; background: #fffffff2; color: #526579; font-size: 9px; cursor: pointer; }
+.geometry-3d-toolbar button:hover, .geometry-3d-toolbar button.active { border-color: #7aa6cb; background: #eaf3fb; color: #1d4e73; }
+.geometry-3d-host { flex: 1; min-height: 0; }
+.geometry-3d-host canvas { display: block; width: 100%; height: 100%; outline: none; cursor: grab; }
+.geometry-3d-host canvas:active { cursor: grabbing; }
+.geometry-3d-caption { position: absolute; left: 14px; bottom: 14px; display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid #dbe3ea; border-radius: 5px; background: #ffffffed; box-shadow: 0 2px 12px #23374a0d; pointer-events: none; }
+.geometry-3d-caption strong { color: #29465a; font-size: 11px; }
+.geometry-3d-caption span { color: #64748b; font-size: 9px; }
+.geometry-3d-caption small { color: #8a99a8; font-size: 8px; }
+.geometry-3d-error, .geometry-3d-loading { flex: 1; display: grid; place-items: center; min-height: 280px; padding: 32px; background: #f4f6f8; color: #64748b; font-size: 12px; text-align: center; }
+.geometry-3d-error { position: absolute; inset: 0; }
+
 .status-bar { height: 25px; flex: 0 0 25px; background: #172554; color: #cbd5e1; display: flex; align-items: center; gap: 6px; padding: 0 12px; font-size: 8px; letter-spacing: .1px; }
 .status-indicator { width: 5px; height: 5px; border-radius: 50%; background: #fbbf24; }
 .status-indicator.ok { background: #4ade80; }

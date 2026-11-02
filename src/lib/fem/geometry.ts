@@ -1,11 +1,23 @@
 import type { GeometryDomain, HeatModel, MeshNode } from './types'
 
-export function rectangleGeometry(width: number, height: number): HeatModel['geometry'] {
+export function rectangleGeometry(width: number, height: number, depth = 0.02, dimension: '2d' | '3d' = '2d'): HeatModel['geometry'] {
   const vertices = [{ x: 0, y: 0 }, { x: width, y: 0 }, { x: width, y: height }, { x: 0, y: height }]
   return {
-    shape: 'rectangle', width, height, vertices,
+    shape: 'rectangle', dimension, width, height, depth, vertices,
     domains: [{ id: 'domain-1', name: 'Domain 1', vertices: vertices.map((vertex) => ({ ...vertex })) }],
   }
+}
+
+export function domainExtrusion(geometry: HeatModel['geometry'], domainIndex: number): { depth: number; z: number } {
+  const domain = geometry.domains[domainIndex]
+  if (!domain) throw new Error('Select a valid geometry domain.')
+  return { depth: domain.depth ?? geometry.depth, z: domain.z ?? 0 }
+}
+
+export function geometryVolume(geometry: HeatModel['geometry'], domainIndex: number): number {
+  const domain = geometry.domains[domainIndex]
+  if (!domain) throw new Error('Select a valid geometry domain.')
+  return signedPolygonArea(domain.vertices) * domainExtrusion(geometry, domainIndex).depth
 }
 
 function distance(a: MeshNode, b: MeshNode): number {
@@ -82,7 +94,7 @@ export function polygonGeometry(input: MeshNode[]): HeatModel['geometry'] {
   const area = signedPolygonArea(vertices)
   if (!(width > 0) || !(height > 0) || !(area > Math.max(width, height) ** 2 * 1e-16)) throw new Error('The polygon must enclose a nonzero area.')
   if (width > 1000 || height > 1000 || width < 1e-9 || height < 1e-9) throw new Error('Polygon dimensions must be between 1 nm and 1000 m.')
-  return { shape: 'polygon', width, height, vertices, domains: [{ id: 'domain-1', name: 'Domain 1', vertices: vertices.map((vertex) => ({ ...vertex })) }] }
+  return { shape: 'polygon', dimension: '2d', depth: 0.02, width, height, vertices, domains: [{ id: 'domain-1', name: 'Domain 1', vertices: vertices.map((vertex) => ({ ...vertex })) }] }
 }
 
 function pointInPolygon(point: MeshNode, vertices: MeshNode[], tolerance: number): boolean {
@@ -143,10 +155,17 @@ export function validateDomainLayout(domains: GeometryDomain[]): void {
 }
 
 /** Builds a global-coordinate geometry from independent simple polygon domains. */
-export function multiDomainGeometry(input: GeometryDomain[]): HeatModel['geometry'] {
+export function multiDomainGeometry(input: GeometryDomain[], extrusion: Pick<HeatModel['geometry'], 'dimension' | 'depth'> = { dimension: '2d', depth: 0.02 }): HeatModel['geometry'] {
   if (input.length < 1 || input.length > 16) throw new Error('A model requires between 1 and 16 geometry domains.')
   if (new Set(input.map((domain) => domain.id)).size !== input.length) throw new Error('Geometry domain ids must be unique.')
-  const domains = input.map((domain, index) => ({ id: domain.id, name: domain.name.trim() || `Domain ${index + 1}`, vertices: cleanVertices(domain.vertices) }))
+  if (!Number.isFinite(extrusion.depth) || extrusion.depth < 1e-9 || extrusion.depth > 1000) throw new Error('Extrusion depth must be between 1 nm and 1000 m.')
+  const domains = input.map((domain, index) => {
+    const depth = domain.depth
+    const z = domain.z
+    if (depth !== undefined && (!Number.isFinite(depth) || depth < 1e-9 || depth > 1000)) throw new Error(`Domain ${index + 1} depth must be between 1 nm and 1000 m.`)
+    if (z !== undefined && (!Number.isFinite(z) || Math.abs(z) > 1000)) throw new Error(`Domain ${index + 1} Z position must be finite and within ±1000 m.`)
+    return { id: domain.id, name: domain.name.trim() || `Domain ${index + 1}`, vertices: cleanVertices(domain.vertices), depth, z }
+  })
   domains.forEach((domain, index) => {
     const xs = domain.vertices.map((point) => point.x)
     const ys = domain.vertices.map((point) => point.y)
@@ -162,7 +181,7 @@ export function multiDomainGeometry(input: GeometryDomain[]): HeatModel['geometr
   const width = Math.max(...points.map((point) => point.x))
   const height = Math.max(...points.map((point) => point.y))
   if (width > 1000 || height > 1000 || width < 1e-9 || height < 1e-9) throw new Error('Geometry dimensions must be between 1 nm and 1000 m.')
-  return { shape: 'polygon', width, height, vertices: shifted[0]!.vertices, domains: shifted }
+  return { shape: 'polygon', dimension: extrusion.dimension, depth: extrusion.depth, width, height, vertices: shifted[0]!.vertices, domains: shifted }
 }
 
 /** Scales every domain together, preserving shared edges and domain/material assignments. */
@@ -175,11 +194,11 @@ export function scaleGeometryToBoundingBox(geometry: HeatModel['geometry'], widt
     vertices: domain.vertices.map((vertex) => ({ x: vertex.x * scaleX, y: vertex.y * scaleY })),
   }))
   if (geometry.shape === 'rectangle' && domains.length === 1) {
-    const scaled = rectangleGeometry(width, height)
-    scaled.domains[0] = { id: domains[0]!.id, name: domains[0]!.name, vertices: scaled.domains[0]!.vertices }
+    const scaled = rectangleGeometry(width, height, geometry.depth, geometry.dimension)
+    scaled.domains[0] = { ...domains[0]!, vertices: scaled.domains[0]!.vertices }
     return scaled
   }
-  return multiDomainGeometry(domains)
+  return multiDomainGeometry(domains, geometry)
 }
 
 /** Uses a uniform whole-model scale so an area edit cannot break conforming interfaces. */

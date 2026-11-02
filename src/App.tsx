@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { Geometry3DLoading } from '@/components/Geometry3DLoading'
+const Geometry3DCanvas = lazy(() => import('@/components/Geometry3DCanvas'))
 import { Check, CircleHelp, Download, FilePlus2, FolderOpen, Gauge, RotateCcw, Save, Waves } from 'lucide-react'
 import { AdaptivePanel } from '@/components/AdaptivePanel'
 import { ModelTree, type NodeId } from '@/components/ModelTree'
@@ -66,6 +68,7 @@ function App() {
     setAdaptiveReport(null)
     setSweepReport(null)
     setFrameIndex(0)
+    if (next.geometry.dimension !== model.geometry.dimension) setView(next.geometry.dimension === '3d' ? 'geometry3d' : 'geometry')
   }
   const compute = async (candidate = model) => {
     const request = ++operation.current
@@ -232,7 +235,7 @@ function App() {
     if (structuralNodes.includes(node)) setQuantity('displacement')
     if (node === 'custom') setQuantity('custom')
     setSelected(node)
-    if (node === 'geometry') { setRibbonTab('geometry'); setView('geometry') }
+    if (node === 'geometry') { setRibbonTab('geometry'); setView(model.geometry.dimension === '3d' ? 'geometry3d' : 'geometry') }
     else if (node === 'material') setRibbonTab('materials')
     else if (node === 'mesh') { setRibbonTab('mesh'); setView('mesh') }
     else if (['study', 'convergence', 'adaptive', 'sweep'].includes(node)) setRibbonTab('study')
@@ -303,7 +306,7 @@ function App() {
       <Inspector model={model} selected={selected} result={displayResult} stale={stale} converging={converging} selectedDomain={selectedDomain} onSelectedDomainChange={setSelectedDomain} onChange={updateModel} onImportGeometry={importGeometry} onExport={exportFile} onRunConvergence={runConvergence} onRunAdaptive={runAdaptive} onRunSweep={runSweep} />
       <section className="center-panel">
         <div className="viewport-toolbar">
-          <div className="view-tabs"> {(['geometry', 'mesh', 'results'] as const).map((item) => <button key={item} className={view === item ? 'active' : ''} onClick={() => setView(item)}>{item[0]!.toUpperCase() + item.slice(1)}</button>)}</div>
+          <div className="view-tabs">{([['geometry', 'Geometry'], ['geometry3d', '3D model'], ['mesh', 'Mesh'], ['results', 'Results']] as const).map(([item, label]) => <button key={item} className={view === item ? 'active' : ''} onClick={() => setView(item)}>{label}</button>)}</div>
           <div className="header-spacer" />
           {view === 'results' && <>
             <select className="quantity-select" value={quantity} onChange={(event) => setQuantity(event.target.value as ResultQuantity)} aria-label="Result quantity">
@@ -313,7 +316,7 @@ function App() {
           </>}
           <button className="icon-button" title="Reset model" onClick={() => loadModel(structuredClone(defaultModel))}><RotateCcw size={14} /></button>
         </div>
-        <SimulationCanvas model={model} result={displayResult} view={view} quantity={quantity} showMesh={showMesh} stale={stale} selectedDomain={selectedDomain} onSelectDomain={selectDomain} onSelectBoundary={selectBoundary} />
+        {view === 'geometry3d' ? <Suspense fallback={<Geometry3DLoading />}><Geometry3DCanvas model={model} selectedDomain={selectedDomain} onSelectDomain={(index) => { setSelectedDomain(index); setSelected('geometry'); setRibbonTab('geometry') }} /></Suspense> : <SimulationCanvas model={model} result={displayResult} view={view} quantity={quantity} showMesh={showMesh} stale={stale} selectedDomain={selectedDomain} onSelectDomain={selectDomain} onSelectBoundary={selectBoundary} />}
         {sweepReport && view === 'results' && <SweepPanel report={sweepReport} selectedCase={selectedCase} onSelect={(index) => {
           const selectedResult = sweepReport.cases[index]!.result
           setSelectedCase(index)
@@ -333,7 +336,7 @@ function App() {
       </section>
     </main>
 
-    <footer className="status-bar"><span className={`status-indicator ${result?.converged && !stale ? 'ok' : ''}`} /><span>{converging ? 'Running successive mesh studies…' : computing ? 'Assembling and solving…' : stale ? 'Results need updating' : result?.converged ? 'Study completed successfully' : 'Ready'}</span><span className="status-divider">|</span><span>2D · {physicsName}</span><div className="header-spacer" /><Gauge size={12} /><span>{result ? `${result.solveTimeMs.toFixed(1)} ms` : '—'}</span><span className="status-divider">|</span><span>Local session</span><Download size={12} /><span>Open data</span></footer>
+    <footer className="status-bar"><span className={`status-indicator ${result?.converged && !stale ? 'ok' : ''}`} /><span>{converging ? 'Running successive mesh studies…' : computing ? 'Assembling and solving…' : stale ? 'Results need updating' : result?.converged ? 'Study completed successfully' : 'Ready'}</span><span className="status-divider">|</span><span>{model.geometry.dimension === '3d' ? '3D geometry · 2D physics' : '2D'} · {physicsName}</span><div className="header-spacer" /><Gauge size={12} /><span>{result ? `${result.solveTimeMs.toFixed(1)} ms` : '—'}</span><span className="status-divider">|</span><span>Local session</span><Download size={12} /><span>Open data</span></footer>
     {toast && <div className={`toast ${toast.type}`} role="status">{toast.type === 'success' ? <Check size={16} /> : <CircleHelp size={16} />}{toast.text}</div>}
   </div>
 }

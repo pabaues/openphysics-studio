@@ -8,6 +8,20 @@ import { runParametricSweep } from './sweep'
 
 const photonicPresets: ExamplePresetId[] = ['pinPhotodetector', 'pnModulator']
 
+describe('3D geometry preset', () => {
+  it('validates independent prismatic solids and preserves their editable 2D physics', () => {
+    const model = heatModelSchema.parse(createExampleModel('block3d'))
+    expect(model.geometry.dimension).toBe('3d')
+    expect(model.geometry.domains).toHaveLength(3)
+    expect(model.geometry.domains.map((domain) => domain.depth)).toEqual([0.03, 0.02, 0.012])
+    expect(model.geometry.domains.map((domain) => domain.z)).toEqual([0, 0.005, 0.009])
+    const resized = scaleGeometryToBoundingBox(model.geometry, 0.16, 0.09)
+    expect(resized.dimension).toBe('3d')
+    expect(resized.domains.map((domain) => domain.depth)).toEqual([0.03, 0.02, 0.012])
+    expect(resized.domains.map((domain) => domain.z)).toEqual([0, 0.005, 0.009])
+  })
+})
+
 describe('editable silicon photonics templates', () => {
   it.each(photonicPresets)('validates and solves the affine potential of %s', (id) => {
     const model = heatModelSchema.parse(createExampleModel(id))

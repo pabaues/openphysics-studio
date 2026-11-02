@@ -1,18 +1,18 @@
-# Comparativa funcional: OpenPhysics Studio 0.10 y COMSOL Multiphysics
+# Comparativa funcional: OpenPhysics Studio 0.12 y COMSOL Multiphysics
 
-Fecha de revisión: 28 de octubre de 2026.
+Fecha de revisión: 2 de noviembre de 2026.
 
 ## Alcance y lectura honesta
 
-OpenPhysics Studio es un prototipo comunitario 2D desarrollado mediante ingeniería limpia. **No es un sustituto completo de COMSOL ni afirma paridad funcional o validación equivalente.** “Parcial” significa que existe un flujo útil pero con un alcance mucho menor; no implica compatibilidad de archivos ni equivalencia numérica certificada.
+OpenPhysics Studio es un prototipo comunitario desarrollado mediante ingeniería limpia. Admite geometría prismática 3D, pero su malla y sus solvers son 2D. **No es un sustituto completo de COMSOL ni afirma paridad funcional o validación equivalente.** “Parcial” significa que existe un flujo útil pero con un alcance mucho menor; no implica compatibilidad de archivos ni equivalencia numérica certificada.
 
 ## Matriz de diferencias
 
-| Área | COMSOL Multiphysics | OpenPhysics Studio 0.10 | Brecha pendiente |
+| Área | COMSOL Multiphysics | OpenPhysics Studio 0.12 | Brecha pendiente |
 |---|---|---|---|
 | Flujo Model Builder | Geometría, selecciones, materiales, física, malla, estudios y resultados integrados | Árbol integrado, presets, estados obsoletos y validación de esquema | Variables, funciones, unidades y secuencias generales de nodos |
 | Distribución de escritorio | Aplicaciones de escritorio instalables y licencias según producto | Ejecutable portable Windows x64 sin Node.js, publicado y probado por CI en cada push a `main` | Instaladores macOS/Linux, firma de código y actualizador automático |
-| Dimensión y geometría | 1D, 2D, axisimetría y 3D; operaciones paramétricas y booleanas | Rectángulos, polígonos simples y hasta 16 dominios poligonales 2D conectados o disjuntos | Primitivas, agujeros, booleanas, curvas, axisimetría, 3D y particionado automático |
+| Dimensión y geometría | 1D, 2D, axisimetría y 3D; operaciones paramétricas y booleanas | Polígonos 2D multidominio y extrusiones prismáticas 3D con profundidad/Z por dominio, visor orbital y selección de sólidos | CAD 3D general, agujeros, booleanas, curvas, axisimetría y particionado automático |
 | CAD e importación | CAD/ECAD, reparación y simplificación según productos | CSV y SVG polygon/polyline/path lineal para un polígono | Curvas, STEP, IGES, STL, ECAD, importación multidominio y reparación |
 | Materiales | Bibliotecas, anisotropía, no linealidad y propiedades variables | Un material isotrópico por dominio con gradientes espaciales lineales de k, εr y E | Biblioteca, mezclas, anisotropía y dependencia de campo |
 | Transferencia de calor | Mecanismos, condiciones y acoplamientos amplios | Conducción estacionaria/transitoria multidominio, k(x,y), fuente uniforme y selecciones de aristas | Convección, radiación, fase, contacto térmico y fuentes generales |
@@ -43,6 +43,10 @@ OpenPhysics Studio es un prototipo comunitario 2D desarrollado mediante ingenier
 4. **Kernels y solvers.** Producto escalar WASM reproducible, RCM e IC(0), contrastados con variantes de referencia.
 5. **API y ecuación propia.** Entrada pública `src/lib/openphysics.ts`, build ES/declaraciones y física escalar `−∇·(c∇u)+au=f`.
 
+## Mejora incorporada en 0.12
+
+**Modelado geométrico 3D prismático.** El formato v9 añade modo 2D/3D, profundidad predeterminada y profundidad/posición Z por dominio, con migración aditiva desde v1–v8. Three.js construye sólidos reales por extrusión de las secciones existentes, con navegación orbital, encuadre, vistas frontal/superior/isométrica, modo alámbrico y selección sincronizada. El preset “3D layered block” ofrece tres capas con materiales independientes. La malla y los solvers continúan limitados a la sección 2D; no se afirma FEM 3D.
+
 ## Mejora incorporada en 0.10
 
 **Plantillas fotónicas editables y geometría nanométrica.** Se añaden secciones PIN y PN de silicio con tres dominios conformes, materiales por región, potenciales terminales, malla, convergencia, adaptación, barridos y exportación. Bounding box y área activa son editables en cualquier geometría; los helpers también están en la API pública. Las tolerancias numéricas geométricas se escalan con el modelo y la convergencia multidominio compara coordenadas anidadas. Estas plantillas resuelven únicamente electrostática reducida: no proporcionan modos ópticos, responsividad, deriva–difusión, índice efectivo ni desfase óptico. Consulta `docs/photonics.md`.
@@ -59,7 +63,7 @@ Estas mejoras no eliminan las brechas de la matriz. En particular, el WASM no es
 
 ## Límites numéricos que el usuario debe conocer
 
-- Modelos 2D por unidad de profundidad, hasta 16 dominios poligonales y un material isotrópico por dominio; elementos P1.
+- Hasta 16 dominios poligonales, cada uno con un material isotrópico; los sólidos son extrusiones prismáticas, pero la malla y los elementos P1 calculan únicamente la sección 2D.
 - Las interfaces deben compartir aristas completas coincidentes. No se admiten solapamientos, contactos parciales, uniones en T, agujeros ni particionado automático.
 - Las propiedades variables son afines en x/y; las fuentes ordinarias y los coeficientes de la PDE personalizada son constantes.
 - Las condiciones por arista usan índices `dominio:arista` y reglas deterministas en esquinas; no hay selecciones generales por puntos ni operaciones lógicas.

@@ -26,7 +26,7 @@ describe('project persistence', () => {
       study: defaultModel.study,
     }
     const parsed = parseProjectJson(JSON.stringify(legacy))
-    expect(parsed.schemaVersion).toBe(8)
+    expect(parsed.schemaVersion).toBe(9)
     expect(parsed.activePhysics).toBe('heat')
     expect(parsed.material.relativePermittivity).toBe(1)
     expect(parsed.material.density).toBe(defaultModel.material.density)
@@ -46,7 +46,7 @@ describe('project persistence', () => {
     delete legacy.transient
     delete legacy.sweep
     const parsed = parseProjectJson(JSON.stringify(legacy))
-    expect(parsed.schemaVersion).toBe(8)
+    expect(parsed.schemaVersion).toBe(9)
     expect(parsed.material.conductivity).toBe(123)
     expect(parsed.study).toEqual({ type: 'stationary', tolerance: 1e-6, maxIterations: 500, solver: 'iterative', preconditioner: 'jacobi', ordering: 'rcm', manufacturedSolution: 'none' })
     expect(parsed.transient).toEqual(defaultModel.transient)
@@ -60,7 +60,7 @@ describe('project persistence', () => {
     legacy.mesh = { nx: 18, ny: 10, refinement: 2 }
     legacy.study = { type: 'stationary', tolerance: 1e-9, maxIterations: 800 }
     const parsed = parseProjectJson(JSON.stringify(legacy))
-    expect(parsed.schemaVersion).toBe(8)
+    expect(parsed.schemaVersion).toBe(9)
     expect(parsed.name).toBe('Version 5 preserved model')
     expect(parsed.geometry).toEqual(defaultModel.geometry)
     expect(parsed.mesh).toEqual({ nx: 18, ny: 10, refinement: 2 })
@@ -76,7 +76,7 @@ describe('project persistence', () => {
     }
     delete legacy.elasticity
     const parsed = parseProjectJson(JSON.stringify(legacy))
-    expect(parsed.schemaVersion).toBe(8)
+    expect(parsed.schemaVersion).toBe(9)
     expect(parsed.material.youngsModulus).toBe(defaultModel.material.youngsModulus)
     expect(parsed.elasticity).toEqual(defaultModel.elasticity)
   })
@@ -89,7 +89,7 @@ describe('project persistence', () => {
       mesh: { nx: 12, ny: 8 },
     }
     const parsed = parseProjectJson(JSON.stringify(legacy))
-    expect(parsed.schemaVersion).toBe(8)
+    expect(parsed.schemaVersion).toBe(9)
     expect(parsed.geometry.shape).toBe('rectangle')
     expect(parsed.geometry.vertices).toHaveLength(4)
     expect(parsed.geometry.vertices[2]).toEqual({ x: 0.2, y: 0.1 })
@@ -112,7 +112,7 @@ describe('project persistence', () => {
     delete legacy.edgeBoundaries
     delete legacy.adaptive
     const parsed = parseProjectJson(JSON.stringify(legacy))
-    expect(parsed.schemaVersion).toBe(8)
+    expect(parsed.schemaVersion).toBe(9)
     expect(parsed.study).toEqual({ type: 'stationary', solver: 'direct', tolerance: 1e-8, maxIterations: 900, preconditioner: 'jacobi', ordering: 'rcm', manufacturedSolution: 'none' })
     expect(parsed.material.thermalExpansion).toBe(defaultModel.material.thermalExpansion)
     expect(parsed.custom).toEqual(defaultModel.custom)
@@ -127,10 +127,40 @@ describe('project persistence', () => {
     legacy.geometry = geometry
     delete legacy.domainMaterials
     const parsed = parseProjectJson(JSON.stringify(legacy))
-    expect(parsed.schemaVersion).toBe(8)
+    expect(parsed.schemaVersion).toBe(9)
     expect(parsed.geometry.domains).toEqual([{ id: 'domain-1', name: 'Domain 1', vertices: defaultModel.geometry.vertices }])
     expect(parsed.domainMaterials).toEqual({})
     expect(parsed.material).toEqual(defaultModel.material)
+  })
+
+  it('migrates version 8 projects to 2D extrusion defaults', () => {
+    const legacy = structuredClone(defaultModel) as unknown as Record<string, unknown>
+    legacy.schemaVersion = 8
+    const geometry = { ...(legacy.geometry as Record<string, unknown>) }
+    delete geometry.dimension
+    delete geometry.depth
+    legacy.geometry = geometry
+    const parsed = parseProjectJson(JSON.stringify(legacy))
+    expect(parsed.schemaVersion).toBe(9)
+    expect(parsed.geometry.dimension).toBe('2d')
+    expect(parsed.geometry.depth).toBe(0.02)
+  })
+
+  it('round-trips independent 3D extrusion settings for every domain', () => {
+    const model = structuredClone(defaultModel)
+    model.geometry.dimension = '3d'
+    model.geometry.depth = 0.03
+    model.geometry.domains[0]!.depth = 0.012
+    model.geometry.domains[0]!.z = 0.004
+    const parsed = parseProjectJson(JSON.stringify(model))
+    expect(parsed).toEqual(model)
+    expect(parsed.geometry.domains[0]).toMatchObject({ depth: 0.012, z: 0.004 })
+  })
+
+  it('rejects invalid 3D extrusion settings', () => {
+    const model = structuredClone(defaultModel)
+    model.geometry.domains[0]!.depth = 0
+    expect(() => parseProjectJson(JSON.stringify(model))).toThrow()
   })
 
   it('rejects dimensions inconsistent with stored vertices', () => {

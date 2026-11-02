@@ -4,7 +4,7 @@ import { createModelMesh } from '@/lib/fem/mesh'
 import { resultValues } from '@/lib/fem/study'
 import type { AnySimulationResult, HeatModel } from '@/lib/fem/types'
 
-export type ViewMode = 'geometry' | 'mesh' | 'results'
+export type ViewMode = 'geometry' | 'geometry3d' | 'mesh' | 'results'
 export type ResultQuantity = 'temperature' | 'flux' | 'potential' | 'electricField' | 'displacement' | 'vonMises' | 'custom' | 'customGradient'
 export type BoundarySide = 'left' | 'right' | 'top' | 'bottom'
 

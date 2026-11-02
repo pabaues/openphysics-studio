@@ -24,6 +24,10 @@ export interface GeometryDomain {
   id: string
   name: string
   vertices: MeshNode[]
+  /** Extrusion depth in metres; omitted domains inherit geometry.depth. */
+  depth?: number
+  /** Centre of the extrusion on the global Z axis, in metres. */
+  z?: number
 }
 
 export type BoundaryCondition =
@@ -62,13 +66,15 @@ export type SweepParameter =
   | 'electrostatics.rightVoltage'
 
 export interface HeatModel {
-  schemaVersion: 8
+  schemaVersion: 9
   name: string
   activePhysics: ActivePhysics
   geometry: {
     shape: 'rectangle' | 'polygon'
+    dimension: '2d' | '3d'
     width: number
     height: number
+    depth: number
     vertices: MeshNode[]
     domains: GeometryDomain[]
   }
@@ -299,11 +305,11 @@ export interface AdaptiveReport {
 }
 
 export const defaultModel: HeatModel = {
-  schemaVersion: 8,
+  schemaVersion: 9,
   name: 'Thermal plate study',
   activePhysics: 'heat',
   geometry: {
-    shape: 'rectangle', width: 0.1, height: 0.05,
+    shape: 'rectangle', dimension: '2d', width: 0.1, height: 0.05, depth: 0.02,
     vertices: [{ x: 0, y: 0 }, { x: 0.1, y: 0 }, { x: 0.1, y: 0.05 }, { x: 0, y: 0.05 }],
     domains: [{ id: 'domain-1', name: 'Domain 1', vertices: [{ x: 0, y: 0 }, { x: 0.1, y: 0 }, { x: 0.1, y: 0.05 }, { x: 0, y: 0.05 }] }],
   },

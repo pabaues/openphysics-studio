@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { chromium } from 'playwright-core'
 
@@ -244,6 +244,45 @@ try {
   assert.equal(await page.getByLabel('Active domain', { exact: true }).inputValue(), '2')
   await page.screenshot({ path: path.join(output, 'openphysics-disconnected-domains.png'), fullPage: true })
 
+  await page.getByLabel('Example model').selectOption('block3d')
+  await page.waitForFunction(() => document.querySelector('.document-name')?.value === '3D layered block · extruded cross-section' && !document.querySelector('.outdated-label'))
+  await page.locator('.view-tabs button').filter({ hasText: '3D model' }).click()
+  await page.locator('[data-testid="geometry-3d"] canvas').waitFor()
+  await page.locator('.ribbon-button').filter({ hasText: 'Geometry' }).click()
+  assert.equal(await page.getByLabel('Geometry dimension').inputValue(), '3d')
+  assert.equal(await page.getByLabel('Active domain', { exact: true }).locator('option').count(), 3)
+  const canvasBox = await page.locator('[data-testid="geometry-3d"] canvas').boundingBox()
+  assert(canvasBox)
+  await page.locator('[data-testid="geometry-3d"] canvas').click({ position: { x: canvasBox.width * 0.45, y: canvasBox.height * 0.45 } })
+  assert.equal(await page.getByLabel('Active domain', { exact: true }).inputValue(), '2')
+  await page.getByLabel('Active domain', { exact: true }).selectOption('0')
+  await page.getByLabel('Active domain depth').fill('0.04')
+  await page.getByLabel('Active domain center Z').fill('0.002')
+  assert.equal(await page.getByLabel('Active domain depth').inputValue(), '0.04')
+  assert.equal(await page.getByLabel('Active domain center Z').inputValue(), '0.002')
+  for (const label of ['Fit', 'Iso', 'Front', 'Top']) await page.getByRole('button', { name: label, exact: true }).click()
+  await page.getByRole('button', { name: 'Wireframe', exact: true }).click()
+  assert.equal(await page.getByRole('button', { name: 'Wireframe', exact: true }).getAttribute('class'), 'active')
+  await page.getByRole('button', { name: 'Wireframe', exact: true }).click()
+  await page.getByRole('button', { name: 'Iso', exact: true }).click()
+  await page.locator('.geometry-3d-caption').getByText('Structural base', { exact: true }).waitFor()
+  await page.screenshot({ path: path.join(output, 'openphysics-3d-geometry.png'), fullPage: true })
+  const modelDownloadPromise = page.waitForEvent('download')
+  await page.getByTitle('Save model (Ctrl+S)').click()
+  const modelDownload = await modelDownloadPromise
+  const savedModel = await readFile(await modelDownload.path(), 'utf8')
+  const savedJson = JSON.parse(savedModel)
+  assert.equal(savedJson.schemaVersion, 9)
+  assert.equal(savedJson.geometry.dimension, '3d')
+  assert.equal(savedJson.geometry.domains[0].depth, 0.04)
+  assert.equal(savedJson.geometry.domains[0].z, 0.002)
+  await page.locator('input[accept=".json,.opmodel.json"]').setInputFiles({ name: '3d-block.opmodel.json', mimeType: 'application/json', buffer: Buffer.from(savedModel) })
+  await page.waitForFunction(() => !document.querySelector('.outdated-label'))
+  await page.locator('.view-tabs button').filter({ hasText: '3D model' }).click()
+  await page.locator('.ribbon-button').filter({ hasText: 'Geometry' }).click()
+  assert.equal(await page.getByLabel('Active domain depth').inputValue(), '0.04')
+  assert.equal(await page.getByLabel('Active domain center Z').inputValue(), '0.002')
+
   await page.getByLabel('Example model').selectOption('tension')
   await page.waitForFunction(() => document.querySelector('.viewport-label')?.textContent?.includes('Displacement magnitude'))
   assert.equal(await page.locator('.document-name').inputValue(), 'Uniaxial tension patch')
@@ -346,7 +385,7 @@ try {
   await page.setViewportSize({ width: 1100, height: 780 })
   await page.screenshot({ path: path.join(output, 'openphysics-compact.png'), fullPage: true })
   assert.deepEqual(errors, [], `Browser errors:\n${errors.join('\n')}`)
-  console.log('UI validation passed: thermal, transient, electrostatics, elasticity, custom PDE, IC(0), manufactured convergence, adaptive mesh, polygon import, multidomain geometry/materials, editable photonic templates, sweeps, exports and responsive layout.')
+  console.log('UI validation passed: thermal, transient, electrostatics, elasticity, custom PDE, 3D solid selection/camera/editing/JSON round-trip, IC(0), manufactured convergence, adaptive mesh, polygon import, multidomain geometry/materials, editable photonic templates, sweeps, exports and responsive layout.')
   console.log(`Screenshots: ${output}`)
 } finally {
   if (browser) await browser.close()
