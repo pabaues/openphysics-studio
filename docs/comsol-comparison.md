@@ -1,39 +1,39 @@
-# Comparativa funcional: OpenPhysics Studio 0.13 y COMSOL Multiphysics
+# Comparativa funcional: OpenPhysics Studio 0.14 y COMSOL Multiphysics
 
 Fecha de revisión: 2 de noviembre de 2026.
 
 ## Alcance y lectura honesta
 
-OpenPhysics Studio es un prototipo comunitario desarrollado mediante ingeniería limpia. Además de sus interfaces 2D, incorpora malla tetraédrica P1 y conducción térmica estacionaria 3D real para geometrías prismáticas. **No es un sustituto completo de COMSOL ni afirma paridad funcional o validación equivalente.** “Parcial” significa que existe un flujo útil pero con un alcance mucho menor; no implica compatibilidad de archivos ni equivalencia numérica certificada.
+OpenPhysics Studio es un prototipo comunitario desarrollado mediante ingeniería limpia. Además de sus interfaces 2D, incorpora malla tetraédrica P1 y tres modelos reales para geometrías prismáticas 3D: conducción térmica estacionaria/transitoria, electrostática estacionaria y elasticidad lineal estacionaria. **No es un sustituto completo de COMSOL ni afirma paridad funcional o validación equivalente.** “Parcial” significa que existe un flujo útil pero con un alcance mucho menor; no implica compatibilidad de archivos ni equivalencia numérica certificada.
 
 ## Matriz de diferencias
 
-| Área | COMSOL Multiphysics | OpenPhysics Studio 0.13 | Brecha pendiente |
+| Área | COMSOL Multiphysics | OpenPhysics Studio 0.14 | Brecha pendiente |
 |---|---|---|---|
 | Flujo Model Builder | Geometría, selecciones, materiales, física, malla, estudios y resultados integrados | Árbol integrado, presets, estados obsoletos y validación de esquema | Variables, funciones, unidades y secuencias generales de nodos |
 | Distribución de escritorio | Aplicaciones de escritorio instalables y licencias según producto | Ejecutable portable Windows x64 sin Node.js, publicado y probado por CI en cada push a `main` | Instaladores macOS/Linux, firma de código y actualizador automático |
 | Dimensión y geometría | 1D, 2D, axisimetría y 3D; operaciones paramétricas y booleanas | Polígonos 2D multidominio y extrusiones prismáticas 3D con profundidad/Z por dominio, visor orbital y selección de sólidos | CAD 3D general, agujeros, booleanas, curvas, axisimetría y particionado automático |
 | CAD e importación | CAD/ECAD, reparación y simplificación según productos | CSV y SVG polygon/polyline/path lineal para un polígono | Curvas, STEP, IGES, STL, ECAD, importación multidominio y reparación |
 | Materiales | Bibliotecas, anisotropía, no linealidad y propiedades variables | Un material isotrópico por dominio con gradientes espaciales lineales de k, εr y E | Biblioteca, mezclas, anisotropía y dependencia de campo |
-| Transferencia de calor | Mecanismos, condiciones y acoplamientos amplios | Conducción 2D estacionaria/transitoria y 3D estacionaria con tetraedros P1, k(x,y), fuente uniforme y seis caras | Transitorios 3D, convección, radiación, fase, contacto térmico y fuentes generales |
-| Electrostática | Interfaces amplias de AC/DC y acoplamientos | Potencial estacionario 2D multidominio, εr(x,y), carga uniforme y selecciones de aristas | Electrostática 3D, corrientes, magnetismo, frecuencia y terminales |
+| Transferencia de calor | Mecanismos, condiciones y acoplamientos amplios | Conducción 2D/3D estacionaria y transitoria con tetraedros P1, k(x,y), fuente uniforme y seis caras | Convección, radiación, fase, contacto térmico y fuentes generales |
+| Electrostática | Interfaces amplias de AC/DC y acoplamientos | Potencial estacionario 2D/3D multidominio, εr(x,y), carga uniforme y condiciones en seis caras | Corrientes, magnetismo, frecuencia, terminales y selecciones 3D generales |
 | Fotónica integrada | Ondas electromagnéticas, óptica y acoplamientos con semiconductores según módulos | Plantillas PIN/PN editables de orden reducido para potencial y campo electrostático 2D | Modos, índice efectivo, desfase, responsividad, deriva–difusión y acoplamiento óptico |
-| Mecánica estructural | No linealidad, contacto, dinámica, vigas, placas y 3D | Elasticidad lineal 2D multidominio, tracciones P1 y desplazamiento normal | Elasticidad 3D, grandes deformaciones, plasticidad, contacto y dinámica |
-| Acoplamientos | Predefinidos/personalizados, fuertes y débiles | Dilatación térmica–estructural 2D unidireccional estacionaria con propiedades por dominio | Acoplamiento 3D/fuerte, iteración multifísica y matrices de bloques |
+| Mecánica estructural | No linealidad, contacto, dinámica, vigas, placas y 3D | Elasticidad lineal 2D/3D multidominio, tres DOF/nodo en 3D, tracciones P1 y desplazamiento normal | Grandes deformaciones, plasticidad, contacto, dinámica y elementos estructurales |
+| Acoplamientos | Predefinidos/personalizados, fuertes y débiles | Dilatación térmica–estructural 2D/3D unidireccional estacionaria con propiedades por dominio | Acoplamiento fuerte, iteración multifísica y matrices de bloques |
 | Otras físicas | CFD, acústica, química, electromagnetismo y más | Ecuación escalar 2D de difusión–reacción adicional | Fluidos, ondas, reacciones y demás interfaces |
 | Ecuaciones personalizadas | Variables, expresiones y ecuaciones generales | `−∇·(c∇u)+au=f` 2D con coeficientes constantes y API tipada | Parser de expresiones, PDE/ODE generales y SDK de plugins |
-| Selecciones | Dominios, aristas, puntos y selecciones derivadas | Materiales por dominio y overrides `dominio:arista`; caras front/back en calor 3D | Selecciones 3D generales, por caja/bola, grupos, puntos y operaciones lógicas |
-| Elementos y malla | Tipos, órdenes, capas, curvado y controles avanzados | Triángulos P1 en 2D y tetraedros P1 en prismas 3D; interfaces conformes y refinamiento uniforme/local 2D | Malla 3D general, orden superior, capas, curvado, adaptación local 3D y métricas |
+| Selecciones | Dominios, aristas, puntos y selecciones derivadas | Materiales por dominio y overrides `dominio:arista`; seis caras nombradas para los modelos 3D | Selecciones 3D generales, por caja/bola, grupos, puntos y operaciones lógicas |
+| Elementos y malla | Tipos, órdenes, capas, curvado y controles avanzados | Triángulos P1 en 2D y ocho tetraedros P1 centrados por prisma en 3D; interfaces conformes y refinamiento uniforme/local 2D | Malla 3D general, orden superior, capas, curvado, adaptación local 3D y métricas |
 | Adaptación | Estrategias adaptativas según estudio/física | Recuperación de gradiente, marcado y bisección conforme para escalar 2D estacionario | Adaptación 3D, estimadores garantizados, objetivos, h/p, elasticidad y transitorios |
-| Estudios | Estacionario, transitorio, autovalores, frecuencia, optimización y más | Estacionario, transitorio térmico 2D, barridos y convergencia XYZ en 3D; adaptación local solo 2D | Transitorios 3D, autovalores, armónicos, optimización, UQ y multipaso |
+| Estudios | Estacionario, transitorio, autovalores, frecuencia, optimización y más | Estacionario, transitorio térmico 2D/3D, barridos y convergencia XYZ para los tres modelos 3D; adaptación local solo 2D | Autovalores, armónicos, optimización, UQ y multipaso |
 | Verificación | Experiencia industrial y recursos de validación | Benchmarks analíticos 2D/3D, soluciones manufacturadas y errores exactos donde existen referencias | Regresión amplia, más referencias y certificación por dominio |
-| Integración temporal | Métodos y control según el problema | Euler implícito de primer orden y paso fijo en 2D | Integración 3D, BDF, orden superior, paso adaptativo y eventos |
+| Integración temporal | Métodos y control según el problema | Euler implícito de primer orden y paso fijo en 2D/3D | BDF, orden superior, paso adaptativo y eventos |
 | Solvers | Directos, iterativos, segregados, no lineales y multigrid | CG–Jacobi/IC(0), LDLᵀ SPD y orden natural/RCM | Pivotaje, AMG, no lineales, bloques y sistemas generales |
 | HPC | Paralelismo, clúster y GPU | Un Worker; kernel WASM de producto escalar con fallback JS | Solver WASM completo, memoria compartida, MPI/GPU y cancelación inmediata |
-| Postproceso | Cortes, gráficas, sondas, integrales y animaciones | Campos/vectores 2D, superficies 3D, deformada, von Mises, integrales por área/volumen y sondas | Cortes arbitrarios 3D, líneas de corriente, animación exportable y operadores |
-| Exportación e informes | Múltiples formatos e informes configurables | JSON v10, CSV con Z en 3D, VTK triangular/tetraédrico con `domain_id` e informe HTML | VTU/HDF5, series completas e informes configurables |
+| Postproceso | Cortes, gráficas, sondas, integrales y animaciones | Campos/vectores 2D, superficies 3D, deformada 2D, von Mises, integrales por área/volumen y sondas | Cortes arbitrarios 3D, deformada 3D, líneas de corriente, animación exportable y operadores |
+| Exportación e informes | Múltiples formatos e informes configurables | JSON v11, CSV con Z/uz en 3D, VTK triangular/tetraédrico con `domain_id` e informe HTML | VTU/HDF5, series completas e informes configurables |
 | Aplicaciones y gestión | Application Builder, Model Manager y colaboración | Presets y archivos locales | Editor de apps, servidor, permisos y colaboración |
-| Automatización | Métodos, API y herramientas de producto | API pública TypeScript con malla/solver 3D, ES module y declaraciones | Estabilidad 1.0, CLI batch, Python y servidor de estudios |
+| Automatización | Métodos, API y herramientas de producto | API pública TypeScript con malla/solvers 3D, ES module y declaraciones | Estabilidad 1.0, CLI batch, Python y servidor de estudios |
 
 ## Prioridades cerradas en iteraciones anteriores
 
@@ -43,9 +43,13 @@ OpenPhysics Studio es un prototipo comunitario desarrollado mediante ingeniería
 4. **Kernels y solvers.** Producto escalar WASM reproducible, RCM e IC(0), contrastados con variantes de referencia.
 5. **API y ecuación propia.** Entrada pública `src/lib/openphysics.ts`, build ES/declaraciones y física escalar `−∇·(c∇u)+au=f`.
 
+## Mejora incorporada en 0.14
+
+**Tres modelos FEM 3D y transitorios tetraédricos.** El formato v11 añade condiciones eléctricas y estructurales front/back, fuerza de cuerpo Z y migración aditiva desde v1–v10. Cada prisma incorpora un nodo central y ocho tetraedros P1, con diagonales deterministas que preservan interfaces conformes. El núcleo escalar comparte rigidez, reacción, fuentes y masa consistente; el elástico ensambla tres DOF por nodo y la matriz constitutiva 6×6. Se habilitan calor estacionario/transitorio, electrostática y elasticidad 3D con materiales por dominio, seis caras, convergencia XYZ, visualización superficial, CSV/VTK e informes. Los benchmarks cubren campos afines, cargas, interfaces, tracción, contracción lateral, dilatación térmica y convergencia temporal. La PDE personalizada y la adaptación local siguen siendo 2D; no hay CAD 3D general ni paridad con COMSOL.
+
 ## Mejora incorporada en 0.13
 
-**Malla tetraédrica y primer FEM 3D real.** El formato v10 añade divisiones Z y condiciones térmicas front/back, con migración aditiva desde v1–v9. La triangulación de cada sección se extruye y cada prisma se divide en tres tetraedros P1 compatibles, compartiendo nodos en interfaces conformes. El solver térmico estacionario ensambla la rigidez 3D, fuentes consistentes, temperaturas por eliminación y flujo XYZ; admite materiales por dominio y los solvers directo/iterativo existentes. Se añaden convergencia uniforme XYZ, integrales por volumen, visor de resultados superficial, CSV/VTK tetraédrico e informe HTML. El alcance sigue limitado a prismas y calor estacionario: no implica electrostática, elasticidad, transitorios ni CAD 3D general.
+**Malla tetraédrica y primer FEM 3D real.** El formato v10 añadió divisiones Z y condiciones térmicas front/back, con migración aditiva desde v1–v9. Se incorporaron solver térmico estacionario, convergencia uniforme XYZ, integrales por volumen, visor superficial y exportación tetraédrica. La tetrahedralización se sustituye en 0.14 por la variante centrada de ocho tetraedros por prisma para garantizar diagonales conformes entre dominios.
 
 ## Mejora incorporada en 0.12
 
@@ -67,7 +71,7 @@ Estas mejoras no eliminan las brechas de la matriz. En particular, el WASM no es
 
 ## Límites numéricos que el usuario debe conocer
 
-- Hasta 16 dominios poligonales, cada uno con un material isotrópico. En 3D solo se admiten extrusiones prismáticas tetraedralizadas y conducción térmica estacionaria P1; las demás físicas calculan únicamente la sección 2D.
+- Hasta 16 dominios poligonales, cada uno con un material isotrópico. En 3D se admiten extrusiones prismáticas tetraedralizadas con calor estacionario/transitorio, electrostática y elasticidad lineal P1. La PDE personalizada y la adaptación local calculan únicamente la sección 2D.
 - Las interfaces deben compartir aristas completas coincidentes. En 3D, los dominios que comparten arista deben tener la misma profundidad y centro Z. No se admiten solapamientos, contactos parciales, uniones en T, agujeros ni particionado automático.
 - Las propiedades variables son afines en x/y y se evalúan por centroide elemental; no hay variación en Z. Las fuentes ordinarias y los coeficientes de la PDE personalizada son constantes.
 - Las condiciones por arista usan índices `dominio:arista` y reglas deterministas en esquinas; no hay selecciones generales por puntos ni operaciones lógicas.

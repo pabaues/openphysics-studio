@@ -28,13 +28,39 @@ export function tetraGeometry(nodes: MeshNode[], tetrahedron: Tetrahedron): Tetr
   return { volume, gradients }
 }
 
-/** Splits each triangular prism into three tetrahedra with compatible face diagonals. */
-function prismTetrahedra(lower: Triangle, upper: Triangle): Tetrahedron[] {
-  const minimum = lower[0]! < lower[1]! && lower[0]! < lower[2]! ? 0 : lower[1]! < lower[2]! ? 1 : 2
-  const rotate = (triangle: Triangle): Triangle => [triangle[minimum]!, triangle[(minimum + 1) % 3]!, triangle[(minimum + 2) % 3]!]
-  const [a, b, c] = rotate(lower)
-  const [A, B, C] = rotate(upper)
-  return [[a, b, c, C], [a, b, C, B], [a, B, C, A]]
+function orientedTetrahedron(nodes: MeshNode[], tetrahedron: Tetrahedron): Tetrahedron {
+  const [a, b, c, d] = tetrahedron.map((index) => nodes[index]!)
+  const determinant = (b.x - a.x) * ((c.y - a.y) * (d.z! - a.z!) - (c.z! - a.z!) * (d.y - a.y))
+    - (b.y - a.y) * ((c.x - a.x) * (d.z! - a.z!) - (c.z! - a.z!) * (d.x - a.x))
+    + (b.z! - a.z!) * ((c.x - a.x) * (d.y - a.y) - (c.y - a.y) * (d.x - a.x))
+  const oriented = determinant > 0 ? tetrahedron : [tetrahedron[0], tetrahedron[1], tetrahedron[3], tetrahedron[2]] as Tetrahedron
+  tetraGeometry(nodes, oriented)
+  return oriented
+}
+
+/**
+ * Splits a prism through its centre into eight tetrahedra. Vertical-face diagonals
+ * depend only on their four global nodes, so adjacent domains remain conforming.
+ */
+function prismTetrahedra(nodes: MeshNode[], lower: Triangle, upper: Triangle, centre: number): Tetrahedron[] {
+  const result: Tetrahedron[] = [
+    orientedTetrahedron(nodes, [lower[0], lower[1], lower[2], centre]),
+    orientedTetrahedron(nodes, [upper[0], upper[2], upper[1], centre]),
+  ]
+  const diagonalOrder = (a: number, b: number) => [Math.min(a, b), Math.max(a, b)]
+  for (let edge = 0; edge < 3; edge += 1) {
+    const next = (edge + 1) % 3
+    const a = lower[edge]!
+    const b = lower[next]!
+    const A = upper[edge]!
+    const B = upper[next]!
+    const first = diagonalOrder(a, B)
+    const second = diagonalOrder(b, A)
+    const useAB = first[0]! < second[0]! || (first[0] === second[0] && first[1]! <= second[1]!)
+    const faces: Triangle[] = useAB ? [[a, b, B], [a, B, A]] : [[a, b, A], [b, B, A]]
+    faces.forEach((face) => result.push(orientedTetrahedron(nodes, [...face, centre])))
+  }
+  return result
 }
 
 function assertConformingExtrusions(model: HeatModel) {
@@ -94,8 +120,14 @@ export function createTetrahedralMesh(model: HeatModel, extraRefinement = 0): Te
       local.triangles.forEach((triangle) => {
         const lower = triangle.map((node) => layers[layer]![node]!) as Triangle
         const upper = triangle.map((node) => layers[layer + 1]![node]!) as Triangle
-        prismTetrahedra(lower, upper).forEach((tetrahedron) => {
-          tetraGeometry(nodes, tetrahedron)
+        const prismNodes = [...lower, ...upper]
+        const centre = nodes.length
+        nodes.push(prismNodes.reduce((point, node) => ({
+          x: point.x + nodes[node]!.x / 6,
+          y: point.y + nodes[node]!.y / 6,
+          z: point.z! + nodes[node]!.z! / 6,
+        }), { x: 0, y: 0, z: 0 }))
+        prismTetrahedra(nodes, lower, upper, centre).forEach((tetrahedron) => {
           tetrahedra.push(tetrahedron)
           tetrahedronDomains.push(domainIndex)
         })

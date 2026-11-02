@@ -106,7 +106,7 @@ describe('multidomain geometry and materials', () => {
     expect(derived.domains[1]!.area).toBeCloseTo(1, 10)
   })
 
-  it('round-trips domain assignments and materials through schema v10', () => {
+  it('round-trips domain assignments and materials through schema v11', () => {
     const model = compositeModel()
     const parsed = heatModelSchema.parse(JSON.parse(JSON.stringify(model)))
     expect(parsed).toEqual(heatModelSchema.parse(model))

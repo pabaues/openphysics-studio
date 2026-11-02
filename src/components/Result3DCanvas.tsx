@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Box, Grid3X3, Maximize2, Rotate3D, Thermometer } from 'lucide-react'
+import { Box, Grid3X3, Maximize2, Rotate3D, Thermometer, Zap } from 'lucide-react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { createTetrahedralMesh } from '@/lib/fem/mesh3d'
@@ -40,8 +40,20 @@ export default function Result3DCanvas({ model, result, view, quantity, showMesh
   }, [model, view])
   const resultMesh = result?.mesh.kind === 'tetrahedral' ? result.mesh : undefined
   const mesh: TetrahedralMesh | undefined = view === 'mesh' ? generated.mesh : resultMesh
-  const flux = result?.physics === 'heat' && quantity === 'flux' ? result.flux : undefined
-  const values = useMemo(() => flux ? flux.map((value) => value.magnitude) : result?.physics === 'heat' ? result.temperature : [], [flux, result])
+  const field = useMemo(() => {
+    if (!result) return { values: [] as number[], elementValues: false, label: 'Result', unit: '' }
+    if (result.physics === 'heat') return quantity === 'flux'
+      ? { values: result.flux.map((value) => value.magnitude), elementValues: true, label: 'Heat flux magnitude', unit: 'W/m²' }
+      : { values: result.temperature, elementValues: false, label: 'Temperature', unit: '°C' }
+    if (result.physics === 'electrostatics') return quantity === 'electricField'
+      ? { values: result.electricField.map((value) => value.magnitude), elementValues: true, label: 'Electric field magnitude', unit: 'V/m' }
+      : { values: result.potential, elementValues: false, label: 'Electric potential', unit: 'V' }
+    if (result.physics === 'elasticity') return quantity === 'vonMises'
+      ? { values: result.vonMises, elementValues: true, label: 'von Mises stress', unit: 'Pa' }
+      : { values: result.displacement.map((value) => value.magnitude), elementValues: false, label: 'Displacement magnitude', unit: 'm' }
+    return { values: result.values, elementValues: false, label: 'Custom scalar field', unit: 'u' }
+  }, [result, quantity])
+  const { values, elementValues } = field
   const minimum = values.length ? Math.min(...values) : 0
   const maximum = values.length ? Math.max(...values) : 1
 
@@ -157,7 +169,7 @@ export default function Result3DCanvas({ model, result, view, quantity, showMesh
         positions[offset] = node.x
         positions[offset + 1] = node.y
         positions[offset + 2] = node.z ?? 0
-        const value = flux ? values[mesh.triangleElements[faceIndex]!]! : values[nodeIndex] ?? 0
+        const value = elementValues ? values[mesh.triangleElements[faceIndex]!] ?? 0 : values[nodeIndex] ?? 0
         colorAt(value, minimum, maximum, color)
         colors[offset] = color.r
         colors[offset + 1] = color.g
@@ -196,11 +208,11 @@ export default function Result3DCanvas({ model, result, view, quantity, showMesh
     helpers.add(grid, axes)
     scene.add(helpers)
     setView('iso')
-  }, [mesh, view, quantity, values, minimum, maximum, flux, showMesh, wireframe])
+  }, [mesh, view, values, minimum, maximum, elementValues, showMesh, wireframe])
 
   return <div className="geometry-3d" data-testid="tetrahedral-3d">
     <div className="geometry-3d-toolbar">
-      <span>{view === 'results' ? <Thermometer size={15} /> : <Box size={15} />}{view === 'results' ? '3D FEM results' : 'Tetrahedral mesh'}</span>
+      <span>{view === 'results' ? result?.physics === 'electrostatics' ? <Zap size={15} /> : result?.physics === 'elasticity' ? <Box size={15} /> : <Thermometer size={15} /> : <Box size={15} />}{view === 'results' ? '3D FEM results' : 'Tetrahedral mesh'}</span>
       <button onClick={() => setView('fit')} title="Fit 3D view"><Maximize2 size={14} />Fit</button>
       <button onClick={() => setView('iso')}><Rotate3D size={14} />Iso</button>
       <button onClick={() => setView('front')}>Front</button>
@@ -209,7 +221,7 @@ export default function Result3DCanvas({ model, result, view, quantity, showMesh
     </div>
     <div className="geometry-3d-host" ref={host} />
     {(error || generated.error) && <div className="geometry-3d-error" role="alert">{error || generated.error}</div>}
-    {ready && !error && !generated.error && mesh && <div className="geometry-3d-caption"><strong>{view === 'results' ? `${quantity === 'flux' ? 'Heat flux magnitude' : 'Temperature'} · ${minimum.toExponential(3)} … ${maximum.toExponential(3)}` : 'Linear tetrahedral elements'}</strong><span>{mesh.nodes.length.toLocaleString()} nodes · {mesh.tetrahedra.length.toLocaleString()} tetrahedra · {mesh.nz} Z divisions</span><small>{view === 'results' ? 'External surface colors · P1 solution inside each tetrahedron' : 'Prismatic tetrahedralization · drag to inspect'}</small></div>}
+    {ready && !error && !generated.error && mesh && <div className="geometry-3d-caption"><strong>{view === 'results' ? `${field.label} · ${minimum.toExponential(3)} … ${maximum.toExponential(3)} ${field.unit}` : 'Linear tetrahedral elements'}</strong><span>{mesh.nodes.length.toLocaleString()} nodes · {mesh.tetrahedra.length.toLocaleString()} tetrahedra · {mesh.nz} Z divisions</span><small>{view === 'results' ? `External surface colors · ${elementValues ? 'constant element values' : 'P1 nodal interpolation'} inside each tetrahedron` : 'Prismatic tetrahedralization · drag to inspect'}</small></div>}
     {view === 'results' && !resultMesh && <div className="geometry-3d-error" role="status">Compute this 3D model to display its tetrahedral solution.</div>}
   </div>
 }

@@ -43,7 +43,7 @@ export type StructuralBoundaryCondition =
   | { type: 'fixed' }
   | { type: 'roller' }
   | { type: 'normalDisplacement'; value: number }
-  | { type: 'traction'; x: number; y: number }
+  | { type: 'traction'; x: number; y: number; z?: number }
 
 export type CustomBoundaryCondition =
   | { type: 'dirichlet'; value: number }
@@ -66,7 +66,7 @@ export type SweepParameter =
   | 'electrostatics.rightVoltage'
 
 export interface HeatModel {
-  schemaVersion: 10
+  schemaVersion: 11
   name: string
   activePhysics: ActivePhysics
   geometry: {
@@ -97,17 +97,22 @@ export interface HeatModel {
     rightVoltage: number
     top: ElectricBoundaryCondition
     bottom: ElectricBoundaryCondition
+    front?: ElectricBoundaryCondition
+    back?: ElectricBoundaryCondition
   }
   elasticity: {
     planeState: 'planeStress' | 'planeStrain'
     bodyForceX: number
     bodyForceY: number
+    bodyForceZ?: number
     thermalCoupling: boolean
     referenceTemperature: number
     left: StructuralBoundaryCondition
     right: StructuralBoundaryCondition
     top: StructuralBoundaryCondition
     bottom: StructuralBoundaryCondition
+    front?: StructuralBoundaryCondition
+    back?: StructuralBoundaryCondition
   }
   custom: {
     diffusion: number
@@ -215,6 +220,10 @@ export interface TensorValue {
   xx: number
   yy: number
   xy: number
+  /** Additional normal/shear components present on 3D structural elements. */
+  zz?: number
+  yz?: number
+  xz?: number
 }
 
 export type HeatFlux = VectorValue
@@ -263,7 +272,7 @@ export interface StructuralSimulationResult extends BaseSimulationResult {
   strain: TensorValue[]
   stress: TensorValue[]
   vonMises: number[]
-  planeState: 'planeStress' | 'planeStrain'
+  planeState: 'planeStress' | 'planeStrain' | '3d'
   thermal?: {
     temperature: number[]
     referenceTemperature: number
@@ -325,7 +334,7 @@ export interface AdaptiveReport {
 }
 
 export const defaultModel: HeatModel = {
-  schemaVersion: 10,
+  schemaVersion: 11,
   name: 'Thermal plate study',
   activePhysics: 'heat',
   geometry: {
@@ -354,17 +363,22 @@ export const defaultModel: HeatModel = {
     rightVoltage: 5,
     top: { type: 'zeroCharge' },
     bottom: { type: 'zeroCharge' },
+    front: { type: 'zeroCharge' },
+    back: { type: 'zeroCharge' },
   },
   elasticity: {
     planeState: 'planeStress',
     bodyForceX: 0,
     bodyForceY: 0,
+    bodyForceZ: 0,
     thermalCoupling: false,
     referenceTemperature: 20,
     left: { type: 'fixed' },
     right: { type: 'normalDisplacement', value: 0.00001 },
     top: { type: 'free' },
     bottom: { type: 'roller' },
+    front: { type: 'free' },
+    back: { type: 'roller' },
   },
   custom: {
     diffusion: 1,

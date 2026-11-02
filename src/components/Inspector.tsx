@@ -63,15 +63,15 @@ function CustomBoundary({ condition, onChange }: { condition: CustomBoundaryCond
   </>
 }
 
-function StructuralBoundary({ condition, onChange }: { condition: StructuralBoundaryCondition; onChange: (condition: StructuralBoundaryCondition) => void }) {
+function StructuralBoundary({ condition, dimension = '2d', onChange }: { condition: StructuralBoundaryCondition; dimension?: '2d' | '3d'; onChange: (condition: StructuralBoundaryCondition) => void }) {
   return <>
     <label className="field-label"><span>Boundary condition</span><select value={condition.type} onChange={(event) => {
       const type = event.target.value as StructuralBoundaryCondition['type']
-      onChange(type === 'normalDisplacement' ? { type, value: 0 } : type === 'traction' ? { type, x: 0, y: 0 } : { type })
+      onChange(type === 'normalDisplacement' ? { type, value: 0 } : type === 'traction' ? { type, x: 0, y: 0, ...(dimension === '3d' ? { z: 0 } : {}) } : { type })
     }}><option value="free">Free / zero traction</option><option value="fixed">Fixed displacement</option><option value="roller">Roller / normal symmetry</option><option value="normalDisplacement">Prescribed normal displacement</option><option value="traction">Boundary traction</option></select></label>
     {condition.type === 'normalDisplacement' && <NumberField label="Normal displacement" value={condition.value} unit="m" min={-1000} max={1000} step={0.00001} onChange={(value) => onChange({ type: 'normalDisplacement', value })} />}
-    {condition.type === 'traction' && <><NumberField label="Traction X" value={condition.x} unit="N/m²" min={-1e15} max={1e15} step={1000} onChange={(x) => onChange({ type: 'traction', x, y: condition.y })} /><NumberField label="Traction Y" value={condition.y} unit="N/m²" min={-1e15} max={1e15} step={1000} onChange={(y) => onChange({ type: 'traction', x: condition.x, y })} /></>}
-    <div className="equation-box">u · n = uₙ <span>traction uses consistent P1 edge loads; rollers release tangential displacement</span></div>
+    {condition.type === 'traction' && <><NumberField label="Traction X" value={condition.x} unit="N/m²" min={-1e15} max={1e15} step={1000} onChange={(x) => onChange({ type: 'traction', x, y: condition.y, ...(dimension === '3d' ? { z: condition.z ?? 0 } : {}) })} /><NumberField label="Traction Y" value={condition.y} unit="N/m²" min={-1e15} max={1e15} step={1000} onChange={(y) => onChange({ type: 'traction', x: condition.x, y, ...(dimension === '3d' ? { z: condition.z ?? 0 } : {}) })} />{dimension === '3d' && <NumberField label="Traction Z" value={condition.z ?? 0} unit="N/m²" min={-1e15} max={1e15} step={1000} onChange={(z) => onChange({ type: 'traction', x: condition.x, y: condition.y, z })} />}</>}
+    <div className="equation-box">u · n = uₙ <span>traction uses consistent P1 {dimension === '3d' ? 'face' : 'edge'} loads; rollers release tangential displacement</span></div>
   </>
 }
 
@@ -117,7 +117,7 @@ function EdgeBoundaryEditor({ model, physics, onChange }: { model: HeatModel; ph
     <label className="field-label"><span>Domain / boundary edge</span><select aria-label={`${physics} boundary edge`} value={`${domainIndex}:${edge}`} onChange={(event) => setSelection(event.target.value)}>{model.geometry.domains.flatMap((item, itemIndex) => item.vertices.map((vertex, index) => <option key={`${itemIndex}:${index}`} value={`${itemIndex}:${index}`}>{item.name} · Edge {index} · ({vertex.x.toPrecision(3)}, {vertex.y.toPrecision(3)})</option>))}</select></label>
     {physics === 'heat' && <ThermalBoundary condition={model.edgeBoundaries.heat[key] ?? heatDefault} onChange={update} />}
     {physics === 'electrostatics' && <ElectricBoundary condition={model.edgeBoundaries.electrostatics[key] ?? electricDefault} onChange={update} />}
-    {physics === 'elasticity' && <StructuralBoundary condition={model.edgeBoundaries.elasticity[key] ?? structuralDefault} onChange={update} />}
+    {physics === 'elasticity' && <StructuralBoundary condition={model.edgeBoundaries.elasticity[key] ?? structuralDefault} dimension={model.geometry.dimension} onChange={update} />}
     {physics === 'custom' && <CustomBoundary condition={model.edgeBoundaries.custom[key] ?? customDefault} onChange={update} />}
     <button className="export-button" onClick={reset}>Use named boundary default</button>
   </div>
@@ -157,8 +157,8 @@ export function Inspector({ model, selected, result, stale, converging, selected
   const updateElectric = (patch: Partial<HeatModel['electrostatics']>) => onChange({ ...model, activePhysics: 'electrostatics', electrostatics: { ...model.electrostatics, ...patch } })
   const updateStructural = (patch: Partial<HeatModel['elasticity']>) => onChange({ ...model, activePhysics: 'elasticity', study: { ...model.study, type: 'stationary' }, elasticity: { ...model.elasticity, ...patch } })
   const updateCustom = (patch: Partial<HeatModel['custom']>) => onChange({ ...model, activePhysics: 'custom', study: { ...model.study, type: 'stationary' }, custom: { ...model.custom, ...patch } })
-  const electricBoundary = selected.replace('electric', '').toLowerCase() as 'left' | 'right' | 'top' | 'bottom'
-  const structuralBoundary = selected.replace('structural', '').toLowerCase() as 'left' | 'right' | 'top' | 'bottom'
+  const electricBoundary = selected.replace('electric', '').toLowerCase() as 'left' | 'right' | 'top' | 'bottom' | 'front' | 'back'
+  const structuralBoundary = selected.replace('structural', '').toLowerCase() as 'left' | 'right' | 'top' | 'bottom' | 'front' | 'back'
   const isElectricBoundary = selected.startsWith('electric')
   const isStructuralBoundary = selected.startsWith('structural')
   const isPolygon = model.geometry.shape === 'polygon'
@@ -170,7 +170,7 @@ export function Inspector({ model, selected, result, stale, converging, selected
   const finestRefinement = baseRefinement + model.convergence.levels - 1
   const finestZ = (model.mesh.nz ?? 2) * 2 ** (model.convergence.levels - 1)
   const estimatedTriangles = model.geometry.domains.reduce((sum, domain) => sum + domain.vertices.length - 2, 0) * 4 ** finestRefinement
-  const estimatedTetrahedra = (isPolygon ? estimatedTriangles : 2 * model.mesh.nx * model.mesh.ny * 4 ** (model.convergence.levels - 1)) * finestZ * 3
+  const estimatedTetrahedra = (isPolygon ? estimatedTriangles : 2 * model.mesh.nx * model.mesh.ny * 4 ** (model.convergence.levels - 1)) * finestZ * 8
   const convergenceTooLarge = is3D ? finestZ > 32 || estimatedTetrahedra > 100000 : isPolygon ? finestRefinement > 5 || estimatedTriangles > 100000 : finestDivisions > 128
   const geometryImport = <label className="study-button geometry-import"><FileUp size={15} />Import SVG or CSV<input aria-label="Geometry file" type="file" accept=".svg,.csv" hidden onChange={(event) => {
     const file = event.target.files?.[0]
@@ -182,10 +182,13 @@ export function Inspector({ model, selected, result, stale, converging, selected
     <aside className="inspector" aria-label="Settings">
       <div className="panel-heading"><span>Settings</span><Info size={14} /></div>
       <div className="inspector-scroll">
-        {selected === 'geometry' && <Section eyebrow="Geometry sequence" title={model.geometry.domains.length > 1 ? `${model.geometry.domains.length} geometry domains` : isPolygon ? 'Simple polygon' : 'Parametric rectangle'} description={model.geometry.dimension === '3d' ? 'Extrude each section into a prismatic solid for tetrahedral meshing and stationary 3D heat conduction.' : 'Build an editable 2D section, or switch to 3D to extrude every domain.'}>
+        {selected === 'geometry' && <Section eyebrow="Geometry sequence" title={model.geometry.domains.length > 1 ? `${model.geometry.domains.length} geometry domains` : isPolygon ? 'Simple polygon' : 'Parametric rectangle'} description={model.geometry.dimension === '3d' ? 'Extrude each section into a prismatic solid for tetrahedral heat, electrostatic and linear-elastic analysis.' : 'Build an editable 2D section, or switch to 3D to extrude every domain.'}>
           <label className="field-label"><span>Geometry dimension</span><select aria-label="Geometry dimension" value={model.geometry.dimension} onChange={(event) => {
             const dimension = event.target.value as '2d' | '3d'
-            onChange(dimension === '3d' ? { ...model, activePhysics: 'heat', geometry: { ...model.geometry, dimension }, study: { ...model.study, type: 'stationary', manufacturedSolution: 'none' }, sweep: { ...model.sweep, parameter: 'material.conductivity' } } : { ...model, geometry: { ...model.geometry, dimension } })
+            if (dimension === '2d') { onChange({ ...model, geometry: { ...model.geometry, dimension } }); return }
+            const activePhysics = model.activePhysics === 'custom' ? 'heat' : model.activePhysics
+            const parameter = activePhysics === 'heat' ? 'material.conductivity' : activePhysics === 'electrostatics' ? 'material.relativePermittivity' : 'material.youngsModulus'
+            onChange({ ...model, activePhysics, geometry: { ...model.geometry, dimension }, study: { ...model.study, type: activePhysics === 'heat' ? model.study.type : 'stationary', manufacturedSolution: 'none' }, sweep: { ...model.sweep, parameter } })
           }}><option value="2d">2D cross-section</option><option value="3d">3D extrusion</option></select></label>
           <label className="field-label"><span>Active domain</span><select aria-label="Active domain" value={domainIndex} onChange={(event) => onSelectedDomainChange(Number(event.target.value))}>{model.geometry.domains.map((domain, index) => <option key={domain.id} value={index}>{domain.name}</option>)}</select></label>
           <label className="field-label"><span>Active domain name</span><input aria-label="Active domain name" className="text-field" value={activeDomain.name} maxLength={80} onChange={(event) => {
@@ -206,7 +209,7 @@ export function Inspector({ model, selected, result, stale, converging, selected
               onChange({ ...model, geometry: { ...model.geometry, domains } })
             }} />
             <div className="property-row"><span>Active solid volume</span><strong>{geometryVolume(model.geometry, domainIndex).toExponential(4)} m³</strong></div>
-            <div className="solver-note neutral"><Info size={16} /><span>Depth and Z create true 3D tetrahedra. Connected domains must share depth and center Z; stationary Heat Transfer is the currently supported 3D physics.</span></div>
+            <div className="solver-note neutral"><Info size={16} /><span>Depth and Z create true 3D tetrahedra. Connected domains must share depth and center Z. Heat, Electrostatics and Linear Elasticity are available in 3D; Custom scalar PDE remains 2D.</span></div>
           </>}
           <div className="property-row"><span>Domain vertices</span><strong>{activeDomain.vertices.length}</strong></div>
           {isPolygon && model.geometry.domains.length === 1 && <button className="export-button" onClick={() => onChange({ ...model, geometry: rectangleGeometry(model.geometry.width, model.geometry.height, model.geometry.depth, model.geometry.dimension) })}>Use parametric rectangle</button>}
@@ -255,30 +258,32 @@ export function Inspector({ model, selected, result, stale, converging, selected
           <div className="equation-box primary">∇ · (−ε∇V) = ρ</div>
           <NumberField label="Space charge ρ" value={model.electrostatics.chargeDensity} unit="C/m³" min={-1e6} max={1e6} step={1e-9} onChange={(chargeDensity) => updateElectric({ chargeDensity })} />
           <div className="property-row"><span>Permittivity</span><strong>ε = εᵣε₀</strong></div><div className="property-row"><span>Derived quantity</span><strong>E = −∇V</strong></div>
+          <div className="property-row"><span>Discretization</span><strong>{is3D ? 'P1 tetrahedra · 3D' : 'P1 triangles · 2D'}</strong></div>
           {isPhotonicTemplate && <div className="solver-note neutral"><Info size={16} /><span>This template solves only the biased cross-section. It does not compute optical modes, responsivity, drift–diffusion current, effective index, or optical phase shift.</span></div>}
           <EdgeBoundaryEditor model={model} physics="electrostatics" onChange={onChange} />
         </Section>}
 
-        {isElectricBoundary && <Section eyebrow="Electric boundary" title={`${electricBoundary[0]!.toUpperCase() + electricBoundary.slice(1)} boundary`} description="Prescribe potential or impose zero normal electric displacement.">
+        {isElectricBoundary && <Section eyebrow="Electric boundary" title={`${electricBoundary[0]!.toUpperCase() + electricBoundary.slice(1)} boundary${electricBoundary === 'front' ? ' (+Z)' : electricBoundary === 'back' ? ' (−Z)' : ''}`} description="Prescribe potential or impose zero normal electric displacement.">
           {(electricBoundary === 'left' || electricBoundary === 'right')
             ? <><NumberField label="Electric potential" value={electricBoundary === 'left' ? model.electrostatics.leftVoltage : model.electrostatics.rightVoltage} unit="V" min={-1e9} max={1e9} onChange={(value) => updateElectric(electricBoundary === 'left' ? { leftVoltage: value } : { rightVoltage: value })} /><div className="equation-box">V = V₀ <span>on ∂Ω</span></div></>
-            : <ElectricBoundary condition={model.electrostatics[electricBoundary]} onChange={(condition) => updateElectric({ [electricBoundary]: condition })} />}
+            : <ElectricBoundary condition={model.electrostatics[electricBoundary] ?? { type: 'zeroCharge' }} onChange={(condition) => updateElectric({ [electricBoundary]: condition })} />}
         </Section>}
 
-        {selected === 'elasticity' && <Section eyebrow="Solid mechanics" title="Linear elasticity" description="Small-strain isotropic elasticity with two displacement components per node.">
+        {selected === 'elasticity' && <Section eyebrow="Solid mechanics" title="Linear elasticity" description={`Small-strain isotropic elasticity with ${is3D ? 'three' : 'two'} displacement components per node.`}>
           <div className="equation-box primary">∇ · σ + b = 0, &nbsp; σ = D : ε</div>
-          <label className="field-label"><span>2D formulation</span><select aria-label="Plane formulation" value={model.elasticity.planeState} onChange={(event) => updateStructural({ planeState: event.target.value as HeatModel['elasticity']['planeState'] })}><option value="planeStress">Plane stress</option><option value="planeStrain">Plane strain</option></select></label>
+          {!is3D && <label className="field-label"><span>2D formulation</span><select aria-label="Plane formulation" value={model.elasticity.planeState} onChange={(event) => updateStructural({ planeState: event.target.value as HeatModel['elasticity']['planeState'] })}><option value="planeStress">Plane stress</option><option value="planeStrain">Plane strain</option></select></label>}
           <NumberField label="Body force X" value={model.elasticity.bodyForceX} unit="N/m³" min={-1e15} max={1e15} step={1000} onChange={(bodyForceX) => updateStructural({ bodyForceX })} />
           <NumberField label="Body force Y" value={model.elasticity.bodyForceY} unit="N/m³" min={-1e15} max={1e15} step={1000} onChange={(bodyForceY) => updateStructural({ bodyForceY })} />
+          {is3D && <NumberField label="Body force Z" value={model.elasticity.bodyForceZ ?? 0} unit="N/m³" min={-1e15} max={1e15} step={1000} onChange={(bodyForceZ) => updateStructural({ bodyForceZ })} />}
           <label className="mesh-toggle"><input type="checkbox" checked={model.elasticity.thermalCoupling} onChange={(event) => updateStructural({ thermalCoupling: event.target.checked })} />One-way thermal expansion</label>
           {model.elasticity.thermalCoupling && <NumberField label="Reference temperature" value={model.elasticity.referenceTemperature} unit="°C" min={-273.15} max={10000} onChange={(referenceTemperature) => updateStructural({ referenceTemperature })} />}
-          <div className="property-row"><span>Discretization</span><strong>P1 triangles · 2 DOF/node</strong></div>
+          <div className="property-row"><span>Discretization</span><strong>{is3D ? 'P1 tetrahedra · 3 DOF/node' : 'P1 triangles · 2 DOF/node'}</strong></div>
           <div className="property-row"><span>Stress output</span><strong>Elementwise von Mises</strong></div>
           <EdgeBoundaryEditor model={model} physics="elasticity" onChange={onChange} />
         </Section>}
 
-        {isStructuralBoundary && <Section eyebrow="Structural boundary" title={`${structuralBoundary[0]!.toUpperCase() + structuralBoundary.slice(1)} boundary`} description="Free, fixed, roller, or prescribed normal-displacement conditions.">
-          <StructuralBoundary condition={model.elasticity[structuralBoundary]} onChange={(condition) => updateStructural({ [structuralBoundary]: condition })} />
+        {isStructuralBoundary && <Section eyebrow="Structural boundary" title={`${structuralBoundary[0]!.toUpperCase() + structuralBoundary.slice(1)} boundary${structuralBoundary === 'front' ? ' (+Z)' : structuralBoundary === 'back' ? ' (−Z)' : ''}`} description="Free, fixed, roller, prescribed displacement, or surface traction.">
+          <StructuralBoundary condition={model.elasticity[structuralBoundary] ?? { type: 'free' }} dimension={model.geometry.dimension} onChange={(condition) => updateStructural({ [structuralBoundary]: condition })} />
         </Section>}
 
         {selected === 'custom' && <Section eyebrow="User-defined physics" title="Scalar convection-free PDE" description="Constant-coefficient diffusion–reaction equation with Dirichlet and Neumann boundaries.">
@@ -290,20 +295,20 @@ export function Inspector({ model, selected, result, stale, converging, selected
           <EdgeBoundaryEditor model={model} physics="custom" onChange={onChange} />
         </Section>}
 
-        {selected === 'mesh' && <Section eyebrow="Mesh sequence" title={is3D ? 'Prismatic tetrahedra' : isPolygon ? 'Unstructured triangles' : 'Mapped triangles'} description={is3D ? 'Nested section triangulation, Z extrusion and three conforming P1 tetrahedra per triangular prism.' : isPolygon ? 'Earcut triangulation followed by nested one-to-four red refinement.' : 'A structured grid split into first-order triangular finite elements.'}>
+        {selected === 'mesh' && <Section eyebrow="Mesh sequence" title={is3D ? 'Prismatic tetrahedra' : isPolygon ? 'Unstructured triangles' : 'Mapped triangles'} description={is3D ? 'Nested section triangulation, Z extrusion and eight centre-based conforming P1 tetrahedra per triangular prism.' : isPolygon ? 'Earcut triangulation followed by nested one-to-four red refinement.' : 'A structured grid split into first-order triangular finite elements.'}>
           {!isPolygon && <>
             <label className="field-label"><span>Horizontal divisions <b>{model.mesh.nx}</b></span><input aria-label="Horizontal divisions" type="range" min="4" max="64" step="2" value={model.mesh.nx} onChange={(e) => onChange({ ...model, mesh: { ...model.mesh, nx: Number(e.target.value) } })} /></label>
             <label className="field-label"><span>Vertical divisions <b>{model.mesh.ny}</b></span><input aria-label="Vertical divisions" type="range" min="4" max="64" step="2" value={model.mesh.ny} onChange={(e) => onChange({ ...model, mesh: { ...model.mesh, ny: Number(e.target.value) } })} /></label>
-            <div className="mesh-summary"><strong>{((model.mesh.nx + 1) * (model.mesh.ny + 1) * (is3D ? (model.mesh.nz ?? 2) + 1 : 1)).toLocaleString()}</strong><span>nodes</span><strong>{(is3D ? 6 * model.mesh.nx * model.mesh.ny * (model.mesh.nz ?? 2) : 2 * model.mesh.nx * model.mesh.ny).toLocaleString()}</strong><span>{is3D ? 'tetrahedra' : 'triangles'}</span></div>
+            <div className="mesh-summary"><strong>{((model.mesh.nx + 1) * (model.mesh.ny + 1) * (is3D ? (model.mesh.nz ?? 2) + 1 : 1)).toLocaleString()}</strong><span>section nodes</span><strong>{(is3D ? 16 * model.mesh.nx * model.mesh.ny * (model.mesh.nz ?? 2) : 2 * model.mesh.nx * model.mesh.ny).toLocaleString()}</strong><span>{is3D ? 'tetrahedra' : 'triangles'}</span></div>
           </>}
           {isPolygon && <>
             <label className="field-label"><span>Refinement level <b>R{baseRefinement}</b></span><input aria-label="Polygon refinement" type="range" min="0" max="4" step="1" value={baseRefinement} onChange={(event) => onChange({ ...model, mesh: { ...model.mesh, refinement: Number(event.target.value) } })} /></label>
-            <div className="mesh-summary"><strong>{model.geometry.domains.reduce((sum, domain) => sum + domain.vertices.length, 0)}</strong><span>domain vertices</span><strong>{(model.geometry.domains.reduce((sum, domain) => sum + domain.vertices.length - 2, 0) * 4 ** baseRefinement * (is3D ? 3 * (model.mesh.nz ?? 2) : 1)).toLocaleString()}</strong><span>{is3D ? 'tetrahedra' : 'triangles'}</span></div>
+            <div className="mesh-summary"><strong>{model.geometry.domains.reduce((sum, domain) => sum + domain.vertices.length, 0)}</strong><span>domain vertices</span><strong>{(model.geometry.domains.reduce((sum, domain) => sum + domain.vertices.length - 2, 0) * 4 ** baseRefinement * (is3D ? 8 * (model.mesh.nz ?? 2) : 1)).toLocaleString()}</strong><span>{is3D ? 'tetrahedra' : 'triangles'}</span></div>
             <div className="property-row"><span>Element size</span><strong>h ÷ 2 per level</strong></div>
           </>}
           {is3D && <>
             <label className="field-label"><span>Z divisions <b>{model.mesh.nz ?? 2}</b></span><input aria-label="Z divisions" type="range" min="1" max="32" step="1" value={model.mesh.nz ?? 2} onChange={(event) => onChange({ ...model, mesh: { ...model.mesh, nz: Number(event.target.value) } })} /></label>
-            <div className="solver-note neutral"><ShieldCheck size={16} /><span>Every triangular prism is split into three positive-volume tetrahedra with matching face diagonals. Connected domains require identical Z extrusion.</span></div>
+            <div className="solver-note neutral"><ShieldCheck size={16} /><span>Each triangular prism adds a centre node and eight positive-volume tetrahedra. Face diagonals depend only on global corner nodes, preserving conforming interfaces. Connected domains require identical Z extrusion.</span></div>
           </>}
         </Section>}
 
@@ -311,7 +316,7 @@ export function Inspector({ model, selected, result, stale, converging, selected
           <label className="field-label"><span>Study type</span><select aria-label="Study type" value={model.study.type} onChange={(event) => {
             const type = event.target.value as HeatModel['study']['type']
             onChange({ ...model, activePhysics: type === 'transient' ? 'heat' : model.activePhysics, study: { ...model.study, type } })
-          }}><option value="stationary">Stationary{is3D ? ' · 3D heat FEM' : ''}</option><option value="transient" disabled={is3D}>Transient heat · implicit Euler{is3D ? ' · 2D only' : ''}</option></select></label>
+          }}><option value="stationary">Stationary{is3D ? ' · 3D P1 FEM' : ''}</option><option value="transient">Transient heat · implicit Euler</option></select></label>
           <label className="field-label"><span>Linear solver</span><select aria-label="Linear solver" value={model.study.solver} onChange={(event) => onChange({ ...model, study: { ...model.study, solver: event.target.value as HeatModel['study']['solver'] } })}><option value="iterative">Iterative conjugate gradients</option><option value="direct">Direct LDLᵀ · sparse</option></select></label>
           {model.study.solver === 'iterative' && <label className="field-label"><span>Preconditioner</span><select aria-label="Preconditioner" value={model.study.preconditioner} onChange={(event) => onChange({ ...model, study: { ...model.study, preconditioner: event.target.value as HeatModel['study']['preconditioner'] } })}><option value="jacobi">Jacobi</option><option value="ic0">Incomplete Cholesky · IC(0)</option></select></label>}
           <label className="field-label"><span>Matrix ordering</span><select aria-label="Matrix ordering" value={model.study.ordering} onChange={(event) => onChange({ ...model, study: { ...model.study, ordering: event.target.value as HeatModel['study']['ordering'] } })}><option value="rcm">Reverse Cuthill–McKee</option><option value="natural">Natural</option></select></label>

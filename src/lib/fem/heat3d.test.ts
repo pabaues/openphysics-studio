@@ -18,7 +18,7 @@ describe('tetrahedral stationary heat FEM', () => {
   it('creates positive-volume conforming tetrahedra and external faces', () => {
     const model = block()
     const mesh = createTetrahedralMesh(model)
-    expect(mesh.tetrahedra).toHaveLength(6 * 3 * 2 * 3 * 3)
+    expect(mesh.tetrahedra).toHaveLength(16 * 3 * 2 * 3 * 3)
     expect(mesh.nodes.every((node) => node.z !== undefined)).toBe(true)
     const volume = mesh.tetrahedra.reduce((sum, tetrahedron) => sum + tetraGeometry(mesh.nodes, tetrahedron).volume, 0)
     const geometry = tetraGeometry(mesh.nodes, mesh.tetrahedra[0]!)
@@ -77,6 +77,9 @@ describe('tetrahedral stationary heat FEM', () => {
     const validated = heatModelSchema.parse(model)
     const result = solveHeat3D(validated)
     result.mesh.nodes.forEach((node, index) => expect(result.temperature[index]).toBeCloseTo(100 * node.x, 7))
+    if (result.mesh.kind !== 'tetrahedral') throw new Error('Expected tetrahedra.')
+    const interfaceFaces = result.mesh.triangles.filter((triangle) => triangle.every((node) => Math.abs(result.mesh.nodes[node]!.x - 0.5) < 1e-9))
+    expect(interfaceFaces).toHaveLength(0)
     const invalid = structuredClone(validated)
     invalid.geometry.domains[1]!.z = 0.05
     expect(() => createTetrahedralMesh(invalid)).toThrow(/identical depth and center Z/)

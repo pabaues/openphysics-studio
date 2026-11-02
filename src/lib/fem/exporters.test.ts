@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { solveHeat } from './heat'
 import { solveElasticity } from './elasticity'
+import { solveElasticity3D } from './elasticity3d'
 import { toCsv, toDerivedCsv, toHtmlReport, toSweepCsv, toVtk } from './exporters'
 import { runParametricSweep } from './sweep'
 import { defaultModel } from './types'
@@ -52,6 +53,24 @@ describe('scientific exporters', () => {
     expect(vtk).toContain('VECTORS displacement_m double')
     expect(vtk).toContain(`CELL_DATA ${structural.mesh.triangles.length}`)
     expect(vtk).toContain('SCALARS von_mises_stress_Pa double 1')
+  })
+
+  it('exports all three displacement components for 3D elasticity', () => {
+    const model = structuredClone(defaultModel)
+    model.activePhysics = 'elasticity'
+    model.geometry.dimension = '3d'
+    model.mesh = { refinement: 1, nx: 4, ny: 4, nz: 1 }
+    model.elasticity.bodyForceZ = 1000
+    const structural = solveElasticity3D(model)
+    const csv = toCsv(structural)
+    const lines = csv.split('\n')
+    expect(lines[0]).toBe('x_m,y_m,z_m,ux_m,uy_m,uz_m,displacement_m')
+    expect(lines).toHaveLength(structural.mesh.nodes.length + 1)
+    expect(lines[1]).toBe(`${structural.mesh.nodes[0]!.x},${structural.mesh.nodes[0]!.y},${structural.mesh.nodes[0]!.z ?? 0},${structural.displacement[0]!.x},${structural.displacement[0]!.y},${structural.displacement[0]!.z ?? 0},${structural.displacement[0]!.magnitude}`)
+    const vtk = toVtk(structural)
+    const vectors = vtk.split('VECTORS displacement_m double\n')[1]!.split('\nCELL_DATA')[0]!.trim().split('\n')
+    expect(vectors[0]).toBe(`${structural.displacement[0]!.x} ${structural.displacement[0]!.y} ${structural.displacement[0]!.z ?? 0}`)
+    expect(vectors).toHaveLength(structural.mesh.nodes.length)
   })
 
   it('escapes model names in standalone HTML reports', () => {

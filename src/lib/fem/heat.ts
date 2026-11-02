@@ -3,6 +3,7 @@ import { manufacturedSource } from './manufactured'
 import { createModelMesh } from './mesh'
 import { conductivityAt, materialForDomain } from './properties'
 import { near, scalarGradient, solveScalar, type ScalarProblem } from './scalar'
+import { scalarGradient3D } from './scalar3d'
 import type { HeatModel, Mesh, SimulationResult, TransientFrame } from './types'
 
 function heatProblem(model: HeatModel): ScalarProblem {
@@ -112,12 +113,13 @@ export function solveHeat(model: HeatModel, existingMesh?: Mesh): SimulationResu
 export function heatResultAtTime(result: SimulationResult, frameIndex: number): SimulationResult {
   if (!result.transient) return result
   const selected = result.transient.frames[Math.max(0, Math.min(frameIndex, result.transient.frames.length - 1))]!
+  const gradients = result.mesh.kind === 'tetrahedral' ? scalarGradient3D(result.mesh, selected.temperature) : scalarGradient(result.mesh, selected.temperature)
   return {
     ...result,
     temperature: [...selected.temperature],
-    flux: scalarGradient(result.mesh, selected.temperature).map((gradient, index) => {
+    flux: gradients.map((gradient, index) => {
       const conductivity = result.transient!.conductivities?.[index] ?? result.transient!.conductivity
-      return { x: -conductivity * gradient.x, y: -conductivity * gradient.y, magnitude: conductivity * gradient.magnitude }
+      return { x: -conductivity * gradient.x, y: -conductivity * gradient.y, z: -conductivity * (gradient.z ?? 0), magnitude: conductivity * gradient.magnitude }
     }),
     minimum: selected.minimum,
     maximum: selected.maximum,

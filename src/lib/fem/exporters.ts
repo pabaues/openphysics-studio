@@ -12,11 +12,14 @@ function field(result: AnySimulationResult) {
 
 export function toCsv(result: AnySimulationResult): string {
   if (result.physics === 'elasticity') {
+    const is3D = result.mesh.kind === 'tetrahedral'
     const rows = result.mesh.nodes.map((node, index) => {
       const displacement = result.displacement[index]!
-      return [node.x, node.y, displacement.x, displacement.y, displacement.magnitude].join(',')
+      return is3D
+        ? [node.x, node.y, node.z ?? 0, displacement.x, displacement.y, displacement.z ?? 0, displacement.magnitude].join(',')
+        : [node.x, node.y, displacement.x, displacement.y, displacement.magnitude].join(',')
     })
-    return ['x_m,y_m,ux_m,uy_m,displacement_m', ...rows].join('\n')
+    return [is3D ? 'x_m,y_m,z_m,ux_m,uy_m,uz_m,displacement_m' : 'x_m,y_m,ux_m,uy_m,displacement_m', ...rows].join('\n')
   }
   const { values, name } = field(result)
   const is3D = result.mesh.kind === 'tetrahedral'
@@ -37,7 +40,7 @@ export function toVtk(result: AnySimulationResult): string {
   const cellRows = cells.map((cell) => `${cellSize} ${cell.join(' ')}`).join('\n')
   const cellTypes = cells.map(() => is3D ? '10' : '5').join('\n')
   const structuralData = result.physics === 'elasticity' ? `VECTORS displacement_m double
-${result.displacement.map((value) => `${value.x} ${value.y} 0`).join('\n')}` : ''
+${result.displacement.map((value) => `${value.x} ${value.y} ${value.z ?? 0}`).join('\n')}` : ''
   const cellData = `CELL_DATA ${cells.length}
 SCALARS domain_id int 1
 LOOKUP_TABLE default

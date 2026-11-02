@@ -215,6 +215,6 @@ export default function Geometry3DCanvas({ model, selectedDomain, onSelectDomain
     </div>
     <div className="geometry-3d-host" ref={host} />
     {error && <div className="geometry-3d-error" role="alert">{error}</div>}
-    {ready && !error && <div className="geometry-3d-caption"><strong>{model.geometry.domains[selectedDomain]?.name ?? 'No domain selected'}</strong><span>Drag to orbit · Right-drag to pan · Scroll to zoom</span><small>{model.activePhysics === 'heat' && model.study.type === 'stationary' ? 'Prismatic 3D geometry · Stationary tetrahedral heat FEM available' : 'Prismatic 3D geometry · Switch to stationary Heat Transfer for 3D FEM'}</small></div>}
+    {ready && !error && <div className="geometry-3d-caption"><strong>{model.geometry.domains[selectedDomain]?.name ?? 'No domain selected'}</strong><span>Drag to orbit · Right-drag to pan · Scroll to zoom</span><small>Prismatic 3D geometry · P1 tetrahedral heat, electrostatic and elastic FEM{model.activePhysics === 'heat' && model.study.type === 'transient' ? ' · Transient heat enabled' : ''}</small></div>}
   </div>
 }

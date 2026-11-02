@@ -40,6 +40,22 @@ describe('automatic mesh convergence studies', () => {
     expect(report.entries[2]!.observedOrder).toBeUndefined()
   })
 
+  it.each(['heat', 'electrostatics', 'elasticity'] as const)('runs successive tetrahedral grids for 3D %s', (physics) => {
+    const model = structuredClone(defaultModel)
+    model.activePhysics = physics
+    model.geometry.dimension = '3d'
+    model.mesh = { nx: 4, ny: 4, nz: 1, refinement: 1 }
+    model.study = { ...model.study, type: 'stationary', solver: 'direct', manufacturedSolution: 'none' }
+    model.convergence.levels = 2
+    const report = runConvergenceStudy(model)
+    expect(report.physics).toBe(physics)
+    expect(report.finest.physics).toBe(physics)
+    expect(report.entries).toHaveLength(2)
+    expect(report.converged).toBe(true)
+    expect(report.entries[1]!.nodes).toBeGreaterThan(report.entries[0]!.nodes)
+    expect(report.entries[1]!.relativeL2).toBeDefined()
+  })
+
   it('bounds the finest mesh before starting expensive work', () => {
     const model = structuredClone(defaultModel)
     model.mesh = { nx: 64, ny: 64 }

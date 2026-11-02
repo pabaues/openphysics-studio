@@ -8,17 +8,18 @@ OpenPhysics Studio is a clean-room, open-source multiphysics workbench. It runs 
 
 ### Heat Transfer in Solids
 
-- Stationary and transient 2D conduction, plus stationary 3D conduction with P1 tetrahedra.
+- Stationary and transient conduction in 2D and prismatic 3D with P1 triangles/tetrahedra.
 - Isotropic conductivity `k(x,y) = k₀ + gx x + gy y`, evaluated per 2D element or 3D tetrahedron centroid; uniform volumetric generation.
 - Fixed-temperature and insulated named boundaries, plus overrides on arbitrary geometric edges. Prismatic 3D models add front/back conditions and share nodes at conforming domain interfaces.
-- First-order implicit Euler, consistent P1 mass matrices and selectable time frames for 2D transient studies.
+- First-order implicit Euler, consistent P1 mass matrices, warm starts and selectable time frames for 2D and 3D transient studies.
 - Temperature and XYZ heat-flux visualization, including an interactive 3D surface view.
 
 ### Electrostatics
 
-- Stationary 2D potential with spatially linear relative permittivity.
-- Uniform space-charge density, fixed potential and zero-charge/symmetry conditions.
-- Named and arbitrary-edge conditions; potential, field magnitude and vector output.
+- Stationary 2D and prismatic 3D potential with spatially linear relative permittivity.
+- Uniform space-charge density, fixed potential and zero-charge/symmetry conditions on named boundaries, including front/back in 3D.
+- Arbitrary-edge conditions in the 2D section; potential, XYZ field magnitude and vector output.
+- Per-domain permittivity with continuous potential and normal electric displacement at conforming material interfaces.
 
 ### Integrated photonics templates
 
@@ -29,11 +30,11 @@ OpenPhysics Studio is a clean-room, open-source multiphysics workbench. It runs 
 
 ### Linear Elasticity
 
-- Small-strain isotropic plane stress and plane strain with spatially linear Young’s modulus.
-- Body forces, free/fixed/roller/normal-displacement boundaries and consistent nonzero P1 edge tractions.
-- Optional one-way stationary thermal–structural coupling using `εth = α(T − Tref)`.
-- Two displacement DOF per node, scaled deformed shape, element strain/stress and von Mises output.
-- Analytical traction and stress-free thermal-expansion benchmarks.
+- Small-strain isotropic plane stress/plane strain in 2D and full three-component elasticity in prismatic 3D, with spatially linear Young’s modulus.
+- XYZ body forces, free/fixed/roller/normal-displacement boundaries and consistent nonzero P1 edge tractions in 2D or face tractions in 3D.
+- Optional one-way stationary thermal–structural coupling using `εth = α(T − Tref)` in 2D and 3D.
+- Two displacement DOF per node in 2D or three in 3D, scaled 2D deformed shape, element strain/stress and von Mises output.
+- Analytical traction, lateral-contraction, multidomain and stress-free thermal-expansion benchmarks.
 
 ### Custom scalar PDE
 
@@ -50,7 +51,7 @@ OpenPhysics Studio is a clean-room, open-source multiphysics workbench. It runs 
 
 - Parametric rectangles, simple 2D polygons and up to 16 independent polygon domains, including concave boundaries and dimensions down to 1 nm.
 - Interactive prismatic 3D modeling: extrude each section with independent depth and Z position, orbit/pan/zoom, select solids, and use isometric/front/top/fit or wireframe views. The editable **3D layered block** preset demonstrates three domains.
-- Real tetrahedral meshing for prismatic 3D models: each triangular prism is split into three compatible P1 tetrahedra, with shared interface nodes, positive-volume checks and editable Z divisions. Domains sharing an edge must have matching depth and center Z.
+- Real tetrahedral meshing for prismatic 3D models: each triangular prism adds a centre node and eight positive-volume P1 tetrahedra. Global-node-based face diagonals preserve conforming interfaces; Z divisions are editable and connected domains must share depth and center Z.
 - Editable global bounding box and active-domain area for every geometry; whole-model scaling preserves domain/material assignments and conforming interfaces.
 - Conforming multidomain meshes: matching full edges become continuous interfaces with shared nodes; disconnected regions and vertex-only contacts are supported.
 - Per-domain isotropic materials for heat, electrostatics, transient studies, elasticity and one-way thermal coupling.
@@ -76,7 +77,7 @@ OpenPhysics Studio is a clean-room, open-source multiphysics workbench. It runs 
 - True relative residuals and convergence state; warm starts for transient steps.
 - A synchronous WebAssembly dot-product kernel with JavaScript fallback. It is only a kernel, not a full WASM solver; no speedup is claimed without a workload-specific benchmark.
 - Compute, convergence, adaptation and sweeps run sequentially in one persistent Web Worker. Edits logically invalidate stale responses but do not immediately cancel an active calculation.
-- Schema v10 projects with additive migration from v1–v9, persistent per-domain 3D extrusion settings, Z divisions, front/back conditions and stable model signatures.
+- Schema v11 projects with additive migration from v1–v10, persistent per-domain 3D extrusion settings, Z divisions, electric/structural front/back conditions, body force Z and stable model signatures.
 
 All models and results stay on the local machine. No backend is required.
 
@@ -166,7 +167,7 @@ npm run test:ui
 npm run test:desktop  # Windows; validates startup and a real computation
 ```
 
-The UI check starts a temporary server on port 7101, drives Chrome or Edge through both solver families, Web Worker execution, stale-response invalidation, thermal/transient/electrostatic/structural/custom workflows, manufactured convergence, adaptation, IC(0), polygon import, connected/disconnected multidomain editing, per-domain materials, both editable photonic templates, convergence, bias sweeps and downloads. For 3D it checks the dimensional badge, WebGL solid selection, camera controls, wireframe, depth/Z and Z-division editing, tetrahedral heat computation, volumetric results, XYZ convergence, CSV/VTK/derived exports and JSON v10 round-trip. It saves screenshots outside the repository and stops the server. Set `CHROME_PATH` or `UI_TEST_PORT` when needed.
+The UI check starts a temporary server on port 7101, drives Chrome or Edge through both solver families, Web Worker execution, stale-response invalidation, thermal/transient/electrostatic/structural/custom workflows, manufactured convergence, adaptation, IC(0), polygon import, connected/disconnected multidomain editing, per-domain materials, both editable photonic templates, convergence, bias sweeps and downloads. For 3D it checks geometry/camera controls, stationary and transient heat, electrostatics, elasticity, front/back editing, surface fields, XYZ convergence, CSV/VTK/derived exports and JSON v11 round-trip. It saves screenshots outside the repository and stops the server. Set `CHROME_PATH` or `UI_TEST_PORT` when needed.
 
 See [verification models, analytical benchmarks and tolerances](docs/verification.md) for the exact verification contract.
 
@@ -174,14 +175,14 @@ See [verification models, analytical benchmarks and tolerances](docs/verificatio
 
 Successive-grid L2 differences are **not** exact-solution errors. When a manufactured reference is selected, the report separately computes nodal RMS (`exactL2`) and maximum absolute error (`exactMaximum`). The scalar-sine case imposes zero Dirichlet boundaries and manufactures the corresponding source. The logarithmic case requires stationary heat, zero source, zero conductivity gradient in Y and insulated top/bottom boundaries. Manufactured references currently require a single-domain 2D model.
 
-The adaptive recovery indicator guides refinement but is **not a guaranteed error bound**. Local adaptation currently supports stationary 2D heat, electrostatics and custom scalar physics; 3D, elasticity and transient studies use uniform convergence sequences. Studies do not modify the base mesh stored in the project.
+The adaptive recovery indicator guides refinement but is **not a guaranteed error bound**. Local adaptation currently supports stationary 2D heat, electrostatics and custom scalar physics; 3D, elasticity and transient studies use uniform convergence sequences. Centre-based 3D refinement compares all shared physical nodes and excludes non-nested prism centres. Studies do not modify the base mesh stored in the project.
 
 ## Important limits
 
 - Up to 16 simple polygon domains with one isotropic material each, P1 triangles in 2D and P1 tetrahedra in prismatic 3D.
 - Interfaces require complete matching edges; there is no automatic geometry partitioning, multidomain file import or general nonconforming-interface coupling. Connected 3D domains must share depth and center Z.
 - Spatial material variation is linear in X/Y and evaluated at element centroids; Z-dependent, field-dependent, anisotropic and nonlinear materials are absent.
-- 3D FEM currently supports stationary heat conduction only. Electrostatics, elasticity, custom PDE and transient studies remain 2D; local adaptation is 2D only.
+- 3D FEM supports stationary/transient heat, stationary electrostatics and stationary linear elasticity. Custom PDE and local adaptation remain 2D only.
 - No general CAD 3D, holes, multiple subpaths, curves, Boolean geometry or axisymmetry.
 - Thermal coupling is one-way and stationary; no strongly coupled block solve or multiphysics iteration.
 - Custom PDE coefficients/source are constant except for the built-in manufactured-sine source; there is no expression parser or plug-in SDK.
@@ -193,12 +194,15 @@ The adaptive recovery indicator guides refinement but is **not a guaranteed erro
 
 ```text
 src/lib/fem/scalar.ts          Shared 2D scalar assembly and gradients
+src/lib/fem/scalar3d.ts        Shared 3D scalar stiffness, mass and gradients
 src/lib/fem/geometry.ts        Polygon validation and multidomain construction
 src/lib/fem/mesh.ts            Conforming 2D meshes and domain-tagged refinement
-src/lib/fem/mesh3d.ts          Prismatic tetrahedralization and external faces
-src/lib/fem/heat3d.ts          Stationary P1 tetrahedral heat assembly and flux
+src/lib/fem/mesh3d.ts          Centre-based conforming prismatic tetrahedralization
+src/lib/fem/heat3d.ts          Stationary/transient tetrahedral heat and flux
+src/lib/fem/electrostatics3d.ts Tetrahedral potential, field and displacement
+src/lib/fem/elasticity.ts      2D vector elasticity, traction and thermal strain
+src/lib/fem/elasticity3d.ts    3D elasticity, face traction and von Mises stress
 src/lib/fem/properties.ts      Per-domain spatial material evaluation
-src/lib/fem/elasticity.ts      Vector elasticity, traction and thermal strain
 src/lib/fem/custom.ts          Custom diffusion–reaction interface
 src/lib/fem/adaptive.ts        Recovery indicator and conforming local refinement
 src/lib/fem/manufactured.ts    Exact references and error metrics
@@ -206,7 +210,7 @@ src/lib/fem/solver.ts          CG, sparse LDLᵀ and ordering integration
 src/lib/fem/preconditioner.ts  Jacobi and IC(0)
 src/lib/fem/ordering.ts        Reverse Cuthill–McKee
 src/lib/fem/wasm.ts            Synchronous WASM dot product with JS fallback
-src/lib/fem/project.ts         Schema v10 and v1–v9 migration
+src/lib/fem/project.ts         Schema v11 and v1–v10 migration
 src/lib/openphysics.ts         Public numerical API
 src/workers/study.worker.ts    Background compute and study jobs
 src/components/               Model tree, settings, plots and 2D/3D viewports

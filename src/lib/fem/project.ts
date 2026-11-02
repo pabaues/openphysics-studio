@@ -13,7 +13,7 @@ const electricBoundarySchema = z.discriminatedUnion('type', [
 const structuralBoundarySchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('free') }), z.object({ type: z.literal('fixed') }), z.object({ type: z.literal('roller') }),
   z.object({ type: z.literal('normalDisplacement'), value: z.number().min(-1000).max(1000) }),
-  z.object({ type: z.literal('traction'), x: z.number().finite().min(-1e15).max(1e15), y: z.number().finite().min(-1e15).max(1e15) }),
+  z.object({ type: z.literal('traction'), x: z.number().finite().min(-1e15).max(1e15), y: z.number().finite().min(-1e15).max(1e15), z: z.number().finite().min(-1e15).max(1e15).optional() }),
 ])
 const customBoundarySchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('dirichlet'), value: z.number().finite().min(-1e12).max(1e12) }),
@@ -220,9 +220,24 @@ const v10ModelObject = v9ModelObject.extend({
   schemaVersion: z.literal(10), physics: thermalPhysicsV10Schema,
   mesh: meshV5Schema.extend({ nz: z.number().int().min(1).max(32).default(2) }),
 })
+type V10Model = z.infer<typeof v10ModelObject>
+const electrostaticsV11Schema = electrostaticsSchema.extend({
+  front: electricBoundarySchema.default({ type: 'zeroCharge' }),
+  back: electricBoundarySchema.default({ type: 'zeroCharge' }),
+})
+const elasticityV11Schema = v7ModelObject.shape.elasticity.extend({
+  bodyForceZ: z.number().min(-1e15).max(1e15).default(0),
+  front: structuralBoundarySchema.default({ type: 'free' }),
+  back: structuralBoundarySchema.default({ type: 'roller' }),
+})
+const v11ModelObject = v10ModelObject.extend({
+  schemaVersion: z.literal(11),
+  electrostatics: electrostaticsV11Schema,
+  elasticity: elasticityV11Schema,
+})
 
-export const heatModelSchema = v10ModelObject.superRefine((model, context) => {
-  if (model.geometry.dimension === '3d' && (model.activePhysics !== 'heat' || model.study.type !== 'stationary')) context.addIssue({ code: 'custom', message: 'The first 3D solver currently supports stationary Heat Transfer only. Use a 2D cross-section for other physics.' })
+export const heatModelSchema = v11ModelObject.superRefine((model, context) => {
+  if (model.geometry.dimension === '3d' && model.activePhysics === 'custom') context.addIssue({ code: 'custom', message: 'Custom scalar PDE is currently available for 2D models only.' })
   if (model.geometry.dimension === '3d' && model.study.manufacturedSolution !== 'none') context.addIssue({ code: 'custom', message: 'Manufactured 2D references are not available for 3D studies.' })
   if (model.study.type === 'transient' && model.activePhysics !== 'heat') context.addIssue({ code: 'custom', message: 'Transient studies currently require Heat Transfer.' })
   try {
@@ -310,18 +325,27 @@ function migrateV8(model: V8Model): V9Model {
   return { ...model, schemaVersion: 9, geometry: { ...model.geometry, dimension: '2d', depth: defaultModel.geometry.depth } }
 }
 
-function migrateV9(model: V9Model): HeatModel {
+function migrateV10(model: V10Model): HeatModel {
   return heatModelSchema.parse({
+    ...model, schemaVersion: 11,
+    electrostatics: { ...model.electrostatics, front: { type: 'zeroCharge' }, back: { type: 'zeroCharge' } },
+    elasticity: { ...model.elasticity, bodyForceZ: 0, front: { type: 'free' }, back: { type: 'roller' } },
+  })
+}
+
+function migrateV9(model: V9Model): HeatModel {
+  return migrateV10(v10ModelObject.parse({
     ...model, schemaVersion: 10,
     physics: { ...model.physics, front: { type: 'insulated' }, back: { type: 'insulated' } },
     mesh: { ...model.mesh, nz: defaultModel.mesh.nz },
-  })
+  }))
 }
 
 export function parseProjectJson(source: string): HeatModel {
   const json: unknown = JSON.parse(source)
   if (typeof json === 'object' && json !== null && 'schemaVersion' in json) {
-    if (json.schemaVersion === 10) return heatModelSchema.parse(json)
+    if (json.schemaVersion === 11) return heatModelSchema.parse(json)
+    if (json.schemaVersion === 10) return migrateV10(v10ModelObject.parse(json))
     if (json.schemaVersion === 9) return migrateV9(v9ModelObject.parse(json))
     if (json.schemaVersion === 1) {
       const legacy = legacyModelSchema.parse(json)

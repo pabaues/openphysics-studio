@@ -32,11 +32,15 @@ export type NodeId =
   | 'electricRight'
   | 'electricTop'
   | 'electricBottom'
+  | 'electricFront'
+  | 'electricBack'
   | 'elasticity'
   | 'structuralLeft'
   | 'structuralRight'
   | 'structuralTop'
   | 'structuralBottom'
+  | 'structuralFront'
+  | 'structuralBack'
   | 'custom'
   | 'mesh'
   | 'study'
@@ -96,11 +100,11 @@ export function ModelTree({ selected, onSelect, hasResults, activePhysics, domai
         </TreeGroup>
 
         <TreeGroup id="electrostatics" label="Electrostatics" icon={<Zap size={15} />} selected={selected === 'electrostatics'} active={activePhysics === 'electrostatics'} expanded={expanded.electrostatics} onToggle={toggle} onSelect={() => onSelect('electrostatics')}>
-          {(['electricLeft', 'electricRight', 'electricTop', 'electricBottom'] as const).map((boundary) => <button key={boundary} className={`tree-item child ${selected === boundary ? 'selected' : ''}`} onClick={() => onSelect(boundary)}><Zap size={12} /><span>{boundary.replace('electric', '')} boundary</span></button>)}
+          {(['electricLeft', 'electricRight', 'electricTop', 'electricBottom', ...(dimension === '3d' ? ['electricFront', 'electricBack'] as const : [])] as const).map((boundary) => <button key={boundary} className={`tree-item child ${selected === boundary ? 'selected' : ''}`} onClick={() => onSelect(boundary)}><Zap size={12} /><span>{boundary.replace('electric', '')} boundary</span></button>)}
         </TreeGroup>
 
         <TreeGroup id="elasticity" label="Linear Elasticity" icon={<Box size={15} />} selected={selected === 'elasticity'} active={activePhysics === 'elasticity'} expanded={expanded.elasticity} onToggle={toggle} onSelect={() => onSelect('elasticity')}>
-          {(['structuralLeft', 'structuralRight', 'structuralTop', 'structuralBottom'] as const).map((boundary) => <button key={boundary} className={`tree-item child ${selected === boundary ? 'selected' : ''}`} onClick={() => onSelect(boundary)}><Box size={12} /><span>{boundary.replace('structural', '')} boundary</span></button>)}
+          {(['structuralLeft', 'structuralRight', 'structuralTop', 'structuralBottom', ...(dimension === '3d' ? ['structuralFront', 'structuralBack'] as const : [])] as const).map((boundary) => <button key={boundary} className={`tree-item child ${selected === boundary ? 'selected' : ''}`} onClick={() => onSelect(boundary)}><Box size={12} /><span>{boundary.replace('structural', '')} boundary</span></button>)}
         </TreeGroup>
 
         <button className={`tree-item tree-standalone ${selected === 'custom' ? 'selected' : ''}`} onClick={() => onSelect('custom')}><Activity size={15} /><span>Custom scalar PDE</span>{activePhysics === 'custom' && <span className="physics-active" title="Active in study" />}</button>

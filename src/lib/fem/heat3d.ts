@@ -1,10 +1,10 @@
 import { edgeOverride } from './boundary'
 import { domainExtrusion } from './geometry'
-import { createTetrahedralMesh, tetraGeometry } from './mesh3d'
-import { conductivityAt } from './properties'
+import { conductivityAt, materialForDomain } from './properties'
 import { near } from './scalar'
-import { solveLinearSystem, type SparseRow } from './solver'
-import type { HeatModel, SimulationResult, TetrahedralMesh } from './types'
+import { solveScalar3D, tetrahedronCentroid, type ScalarProblem3D, type ScalarSolution3D } from './scalar3d'
+import { createTetrahedralMesh } from './mesh3d'
+import type { HeatModel, SimulationResult, TetrahedralMesh, TransientFrame } from './types'
 
 function prescribedTemperature(model: HeatModel, x: number, y: number, z: number, domainIndex: number): number | undefined {
   const { width, height } = model.geometry
@@ -22,80 +22,85 @@ function prescribedTemperature(model: HeatModel, x: number, y: number, z: number
   return undefined
 }
 
-function nodeDomainAssignments(mesh: TetrahedralMesh): number[] {
-  const domains = Array<number>(mesh.nodes.length).fill(-1)
-  mesh.tetrahedra.forEach((tetrahedron, element) => tetrahedron.forEach((node) => {
-    if (domains[node]! < 0) domains[node] = mesh.tetrahedronDomains[element]!
-  }))
-  if (domains.some((domain) => domain < 0)) throw new Error('A tetrahedral node is not connected to an element.')
-  return domains
+function heatProblem3D(model: HeatModel): ScalarProblem3D {
+  return {
+    coefficient: model.material.conductivity,
+    coefficientAt: (x, y, _z, domainIndex) => conductivityAt(model, x, y, domainIndex),
+    source: model.physics.heatSource,
+    tolerance: model.study.tolerance,
+    maxIterations: model.study.maxIterations,
+    solver: model.study.solver,
+    preconditioner: model.study.preconditioner,
+    ordering: model.study.ordering,
+    requirePrescribed: model.study.type === 'stationary',
+    prescribedValue: (x, y, z, domainIndex) => prescribedTemperature(model, x, y, z, domainIndex),
+  }
 }
 
-/** Stationary 3D heat conduction with linear tetrahedra and Dirichlet elimination. */
-export function solveHeat3D(model: HeatModel, existingMesh?: TetrahedralMesh): SimulationResult {
-  if (model.geometry.dimension !== '3d' || model.activePhysics !== 'heat' || model.study.type !== 'stationary') throw new Error('The first 3D solver supports stationary Heat Transfer only.')
-  const started = performance.now()
-  const mesh = existingMesh ?? createTetrahedralMesh(model)
-  const prescribed = new Map<number, number>()
-  const nodeDomains = nodeDomainAssignments(mesh)
-  mesh.nodes.forEach((node, index) => {
-    const value = prescribedTemperature(model, node.x, node.y, node.z!, nodeDomains[index]!)
-    if (value !== undefined) prescribed.set(index, value)
-  })
-  if (prescribed.size === 0) throw new Error('A stationary 3D heat study requires at least one fixed-temperature boundary.')
-  const free = mesh.nodes.map((_, index) => index).filter((index) => !prescribed.has(index))
-  const systemIndex = new Map(free.map((node, index) => [node, index]))
-  const assembly = free.map(() => new Map<number, number>())
-  const rhs = Array<number>(free.length).fill(0)
-  const flux: Array<{ x: number; y: number; z: number; magnitude: number }> = []
-
-  mesh.tetrahedra.forEach((tetrahedron, elementIndex) => {
-    const domain = mesh.tetrahedronDomains[elementIndex]!
-    const { volume, gradients } = tetraGeometry(mesh.nodes, tetrahedron)
-    const centroid = tetrahedron.reduce((point, index) => {
-      const node = mesh.nodes[index]!
-      return { x: point.x + node.x / 4, y: point.y + node.y / 4, z: point.z + node.z! / 4 }
-    }, { x: 0, y: 0, z: 0 })
-    const conductivity = conductivityAt(model, centroid.x, centroid.y, domain)
-    const source = model.physics.heatSource * volume / 4
-    tetrahedron.forEach((globalRow, localRow) => {
-      const row = systemIndex.get(globalRow)
-      if (row !== undefined) rhs[row]! += source
-      tetrahedron.forEach((globalColumn, localColumn) => {
-        const gradient = gradients[localRow]!
-        const other = gradients[localColumn]!
-        const value = conductivity * volume * (gradient.x * other.x + gradient.y * other.y + gradient.z * other.z)
-        const fixed = prescribed.get(globalColumn)
-        if (row === undefined) return
-        if (fixed !== undefined) rhs[row]! -= value * fixed
-        else {
-          const column = systemIndex.get(globalColumn)!
-          assembly[row]!.set(column, (assembly[row]!.get(column) ?? 0) + value)
-        }
-      })
-    })
-  })
-
-  const rows: SparseRow[] = assembly.map((entries, index) => {
-    const sorted = [...entries.entries()].filter(([, value]) => value !== 0).sort(([a], [b]) => a - b)
-    return { indices: sorted.map(([column]) => column), values: sorted.map(([, value]) => value), diagonal: entries.get(index) ?? 0 }
-  })
-  const solution = solveLinearSystem(rows, rhs, model.study.solver, model.study.tolerance, model.study.maxIterations, undefined, { preconditioner: model.study.preconditioner, ordering: model.study.ordering })
-  const temperature = Array<number>(mesh.nodes.length).fill(0)
-  prescribed.forEach((value, index) => { temperature[index] = value })
-  free.forEach((node, index) => { temperature[node] = solution.values[index]! })
-
-  mesh.tetrahedra.forEach((tetrahedron, elementIndex) => {
-    const { gradients } = tetraGeometry(mesh.nodes, tetrahedron)
-    const gradient = gradients.reduce((sum, item, localIndex) => ({ x: sum.x + item.x * temperature[tetrahedron[localIndex]!]!, y: sum.y + item.y * temperature[tetrahedron[localIndex]!]!, z: sum.z + item.z * temperature[tetrahedron[localIndex]!]! }), { x: 0, y: 0, z: 0 })
-    const centroid = tetrahedron.reduce((point, index) => ({ x: point.x + mesh.nodes[index]!.x / 4, y: point.y + mesh.nodes[index]!.y / 4 }), { x: 0, y: 0 })
-    const conductivity = conductivityAt(model, centroid.x, centroid.y, mesh.tetrahedronDomains[elementIndex]!)
-    flux.push({ x: -conductivity * gradient.x, y: -conductivity * gradient.y, z: -conductivity * gradient.z, magnitude: conductivity * Math.hypot(gradient.x, gradient.y, gradient.z) })
+function thermalResult3D(model: HeatModel, solution: ScalarSolution3D): SimulationResult {
+  const flux = solution.gradient.map((gradient, elementIndex) => {
+    const centroid = tetrahedronCentroid(solution.mesh, solution.mesh.tetrahedra[elementIndex]!)
+    const conductivity = conductivityAt(model, centroid.x, centroid.y, solution.mesh.tetrahedronDomains[elementIndex]!)
+    return { x: -conductivity * gradient.x, y: -conductivity * gradient.y, z: -conductivity * (gradient.z ?? 0), magnitude: conductivity * gradient.magnitude }
   })
   return {
-    physics: 'heat', mesh, temperature, flux, solver: model.study.solver,
+    physics: 'heat', mesh: solution.mesh, temperature: solution.values, flux, solver: model.study.solver,
     converged: solution.converged, iterations: solution.iterations, relativeResidual: solution.relativeResidual,
-    solveTimeMs: performance.now() - started, minimum: Math.min(...temperature), maximum: Math.max(...temperature),
+    solveTimeMs: solution.solveTimeMs, minimum: solution.minimum, maximum: solution.maximum, average: solution.average,
+  }
+}
+
+function frame(time: number, temperature: number[]): TransientFrame {
+  return {
+    time,
+    temperature: [...temperature],
+    minimum: Math.min(...temperature),
+    maximum: Math.max(...temperature),
     average: temperature.reduce((sum, value) => sum + value, 0) / temperature.length,
   }
+}
+
+function solveTransientHeat3D(model: HeatModel, mesh: TetrahedralMesh): SimulationResult {
+  const settings = model.transient
+  const dt = settings.duration / settings.timeSteps
+  const reactionCoefficient = (domainIndex: number) => {
+    const material = materialForDomain(model, domainIndex)
+    return material.density * material.heatCapacity / dt
+  }
+  let temperature = Array<number>(mesh.nodes.length).fill(settings.initialTemperature)
+  const frames = [frame(0, temperature)]
+  let final: SimulationResult | undefined
+  let iterations = 0
+  let converged = true
+  let relativeResidual = 0
+  let solveTimeMs = 0
+  let outputIndex = 1
+  for (let step = 1; step <= settings.timeSteps; step += 1) {
+    final = thermalResult3D(model, solveScalar3D(model, {
+      ...heatProblem3D(model), reactionCoefficient, reactionSource: temperature, initialValues: temperature,
+    }, mesh))
+    temperature = final.temperature
+    iterations += final.iterations
+    solveTimeMs += final.solveTimeMs
+    relativeResidual = Math.max(relativeResidual, final.relativeResidual)
+    converged = converged && final.converged
+    if (step === Math.round(outputIndex * settings.timeSteps / settings.outputSteps)) {
+      frames.push(frame(step * dt, temperature))
+      outputIndex += 1
+    }
+  }
+  if (!final) throw new Error('The transient 3D study did not execute a time step.')
+  const conductivities = mesh.tetrahedra.map((tetrahedron, elementIndex) => {
+    const centroid = tetrahedronCentroid(mesh, tetrahedron)
+    return conductivityAt(model, centroid.x, centroid.y, mesh.tetrahedronDomains[elementIndex]!)
+  })
+  return { ...final, converged, iterations, relativeResidual, solveTimeMs, transient: { frames, timeSteps: settings.timeSteps, conductivity: model.material.conductivity, conductivities } }
+}
+
+/** Stationary/transient 3D heat conduction with linear tetrahedra and consistent mass. */
+export function solveHeat3D(model: HeatModel, existingMesh?: TetrahedralMesh): SimulationResult {
+  if (model.geometry.dimension !== '3d' || model.activePhysics !== 'heat') throw new Error('3D heat conduction requires Heat Transfer and tetrahedral geometry.')
+  const mesh = existingMesh ?? createTetrahedralMesh(model)
+  if (model.study.type === 'transient') return solveTransientHeat3D(model, mesh)
+  return thermalResult3D(model, solveScalar3D(model, heatProblem3D(model), mesh))
 }

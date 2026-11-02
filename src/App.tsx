@@ -25,8 +25,8 @@ import './App.css'
 const initialModel = structuredClone(defaultModel)
 const initialSignature = modelSignature(initialModel)
 const thermalNodes: NodeId[] = ['physics', 'left', 'right', 'top', 'bottom', 'front', 'back']
-const electricNodes: NodeId[] = ['electrostatics', 'electricLeft', 'electricRight', 'electricTop', 'electricBottom']
-const structuralNodes: NodeId[] = ['elasticity', 'structuralLeft', 'structuralRight', 'structuralTop', 'structuralBottom']
+const electricNodes: NodeId[] = ['electrostatics', 'electricLeft', 'electricRight', 'electricTop', 'electricBottom', 'electricFront', 'electricBack']
+const structuralNodes: NodeId[] = ['elasticity', 'structuralLeft', 'structuralRight', 'structuralTop', 'structuralBottom', 'structuralFront', 'structuralBack']
 
 function App() {
   const [model, setModel] = useState<HeatModel>(initialModel)
@@ -221,14 +221,14 @@ function App() {
     }
   }
   const changePhysics = (physics: ActivePhysics) => {
-    if (model.geometry.dimension === '3d' && physics !== 'heat') { notify('The current 3D solver supports stationary Heat Transfer only.', 'error'); return }
+    if (model.geometry.dimension === '3d' && physics === 'custom') { notify('Custom scalar PDE is currently available for 2D models only.', 'error'); return }
     updateModel(modelForPhysics(physics))
     setQuantity(physics === 'heat' ? 'temperature' : physics === 'electrostatics' ? 'potential' : physics === 'custom' ? 'custom' : 'displacement')
     setSelected(physics === 'heat' ? 'physics' : physics === 'electrostatics' ? 'electrostatics' : physics === 'custom' ? 'custom' : 'elasticity')
     setRibbonTab('physics')
   }
   const selectNode = (node: NodeId) => {
-    if (model.geometry.dimension === '3d' && [...electricNodes, ...structuralNodes, 'custom' as NodeId].includes(node)) { notify('This physics is available for 2D models. The current 3D solver is stationary Heat Transfer.', 'error'); return }
+    if (model.geometry.dimension === '3d' && node === 'custom') { notify('Custom scalar PDE is currently available for 2D models only.', 'error'); return }
     if (thermalNodes.includes(node) && model.activePhysics !== 'heat') updateModel(modelForPhysics('heat'))
     if (electricNodes.includes(node) && model.activePhysics !== 'electrostatics') updateModel(modelForPhysics('electrostatics'))
     if (structuralNodes.includes(node) && model.activePhysics !== 'elasticity') updateModel(modelForPhysics('elasticity'))
@@ -339,7 +339,7 @@ function App() {
       </section>
     </main>
 
-    <footer className="status-bar"><span className={`status-indicator ${result?.converged && !stale ? 'ok' : ''}`} /><span>{converging ? 'Running successive mesh studies…' : computing ? 'Assembling and solving…' : stale ? 'Results need updating' : result?.converged ? 'Study completed successfully' : 'Ready'}</span><span className="status-divider">|</span><span>{model.geometry.dimension === '3d' ? '3D · stationary tetrahedral heat FEM' : '2D'} · {physicsName}</span><div className="header-spacer" /><Gauge size={12} /><span>{result ? `${result.solveTimeMs.toFixed(1)} ms` : '—'}</span><span className="status-divider">|</span><span>Local session</span><Download size={12} /><span>Open data</span></footer>
+    <footer className="status-bar"><span className={`status-indicator ${result?.converged && !stale ? 'ok' : ''}`} /><span>{converging ? 'Running successive mesh studies…' : computing ? 'Assembling and solving…' : stale ? 'Results need updating' : result?.converged ? 'Study completed successfully' : 'Ready'}</span><span className="status-divider">|</span><span>{model.geometry.dimension === '3d' ? '3D · P1 tetrahedral FEM' : '2D · P1 triangular FEM'} · {model.study.type === 'transient' ? 'Transient' : 'Stationary'} · {physicsName}</span><div className="header-spacer" /><Gauge size={12} /><span>{result ? `${result.solveTimeMs.toFixed(1)} ms` : '—'}</span><span className="status-divider">|</span><span>Local session</span><Download size={12} /><span>Open data</span></footer>
     {toast && <div className={`toast ${toast.type}`} role="status">{toast.type === 'success' ? <Check size={16} /> : <CircleHelp size={16} />}{toast.text}</div>}
   </div>
 }

@@ -16,16 +16,20 @@ function compareGrids(coarse: AnySimulationResult, fine: AnySimulationResult) {
   let squaredDifference = 0
   let squaredReference = 0
   let maximumDifference = 0
+  let samples = 0
   coarse.mesh.nodes.forEach((node, index) => {
     const fineValue = fineAtCoordinates.get(coordinateKey(node))
-    if (fineValue === undefined) throw new Error('The refined mesh does not contain a required coarse-grid coordinate.')
+    // Centre-based tetrahedral refinement adds non-nested prism centres; compare all shared nodes.
+    if (fineValue === undefined) return
     const difference = fineValue - coarseValues[index]!
     squaredDifference += difference * difference
     squaredReference += fineValue * fineValue
     maximumDifference = Math.max(maximumDifference, Math.abs(difference))
+    samples += 1
   })
-  const denominator = Math.sqrt(squaredReference / coarse.mesh.nodes.length)
-  const absoluteL2 = Math.sqrt(squaredDifference / coarse.mesh.nodes.length)
+  if (samples === 0) throw new Error('The refined mesh does not share any coarse-grid coordinates.')
+  const denominator = Math.sqrt(squaredReference / samples)
+  const absoluteL2 = Math.sqrt(squaredDifference / samples)
   return { relativeL2: denominator > 0 ? absoluteL2 / denominator : absoluteL2, maximumDifference }
 }
 
@@ -37,7 +41,7 @@ function validateFinestSize(model: HeatModel) {
     const triangles = model.geometry.shape === 'rectangle' && model.geometry.domains.length === 1
       ? model.mesh.nx * factor * model.mesh.ny * factor * 2
       : Math.max(1, model.geometry.vertices.length - 2) * 4 ** ((model.mesh.refinement ?? 1) + levels - 1)
-    if (triangles * nz * 3 > 100000 || nz > 32) throw new Error('The finest 3D convergence mesh exceeds 100,000 tetrahedra or 32 Z divisions. Reduce the base mesh or levels.')
+    if (triangles * nz * 8 > 100000 || nz > 32) throw new Error('The finest 3D convergence mesh exceeds 100,000 tetrahedra or 32 Z divisions. Reduce the base mesh or levels.')
   } else if (model.geometry.shape === 'rectangle') {
     if (model.mesh.nx * factor > 128 || model.mesh.ny * factor > 128) throw new Error('The finest convergence mesh exceeds 128 divisions per direction. Reduce the base mesh or levels.')
   } else {

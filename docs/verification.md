@@ -92,31 +92,37 @@ El módulo WASM se genera de forma reproducible desde `dot.wat`, se instancia s�
 
 Las tolerancias geométricas, de triangulación, unión de nodos y detección de frontera son relativas al tamaño del modelo para admitir dimensiones nanométricas. La comparación de mallas no estructuradas usa coordenadas físicas anidadas: los índices globales multidominio pueden cambiar al insertar nodos por dominio y no son una correspondencia válida por sí solos. Estas pruebas verifican electrostática, no propagación óptica ni transporte de portadores.
 
-## Geometría, malla y FEM térmico 3D
+## Geometría, malla y modelos FEM 3D
 
-El visor Three.js construye sólidos prismáticos por dominio a partir de los polígonos validados. `mesh3d.ts` extruye la triangulación 2D y divide cada prisma triangular en tres tetraedros con diagonales compatibles. Los nodos se comparten en las interfaces conformes; los dominios que comparten una arista deben tener la misma profundidad y centro Z. Se validan volúmenes positivos, se identifican caras externas y se limita la malla inicial a 100 000 tetraedros y 32 divisiones Z tras el refinamiento.
+El visor Three.js construye sólidos prismáticos por dominio a partir de los polígonos validados. `mesh3d.ts` extruye la triangulación 2D, añade un nodo al centro de cada prisma triangular y lo divide en ocho tetraedros P1 de volumen positivo. Las diagonales de las caras verticales dependen únicamente de sus cuatro nodos globales, por lo que las interfaces multidominio son conformes. Los nodos se comparten en las interfaces; los dominios que comparten una arista deben tener la misma profundidad y centro Z. Se identifican caras externas y se limita la malla a 100 000 tetraedros y 32 divisiones Z tras el refinamiento.
 
-`heat3d.ts` resuelve conducción estacionaria real con tetraedros P1: ensambla `K = kV BᵀB`, aplica generación volumétrica consistente `QV/4`, impone temperaturas por eliminación y calcula flujo XYZ por elemento. Las propiedades `k(x,y)` se evalúan en el centroide; la variación en Z, anisotropía y no linealidad no están implementadas.
+`scalar3d.ts` comparte el ensamblado escalar `K + aM`, fuentes y masa tetraédrica consistente, eliminación de Dirichlet, warm start y gradientes XYZ. Sobre esta base:
 
-`heat3d.test.ts` y `heat3d.integration.test.ts` comprueban:
+- `heat3d.ts` resuelve conducción estacionaria y transitoria. El transitorio usa Euler implícito, `ρCₚ` por dominio y masa consistente.
+- `electrostatics3d.ts` resuelve `∇·(−ε∇V)=ρ`, con permitividad por dominio, carga uniforme y condiciones de potencial/carga nula en las seis caras.
+- `elasticity3d.ts` ensambla tres grados de libertad por nodo, matriz constitutiva isotrópica 6×6, deformaciones de ingeniería, fuerzas XYZ y tracciones superficiales consistentes. Calcula von Mises y admite dilatación térmica unidireccional estacionaria.
 
-- Volumen total, gradientes P1, caras externas y conformidad multidominio.
-- Reproducción del campo afín `T = 100x` y del flujo uniforme correspondiente.
-- Reducción del error hacia un perfil parabólico con fuente en mallas sucesivas.
-- Rechazo de interfaces Z no conformes y de adaptación local 3D.
-- Integración volumétrica, sonda, exportación CSV/VTK tetraédrica y convergencia uniforme en X, Y y Z.
+Las propiedades variables `k(x,y)`, `εr(x,y)` y `E(x,y)` se evalúan en el centroide; la variación en Z, anisotropía y no linealidad no están implementadas. La PDE personalizada sigue limitada a 2D.
 
-El ensayo de navegador abre el bloque 3D de tres capas, edita profundidad/Z y divisiones Z, fija la cara frontal a `35 °C`, calcula, visualiza resultados, ejecuta convergencia y verifica las descargas y el round-trip JSON v10. El visor de resultados muestra temperatura o flujo superficial con navegación orbital y modo alámbrico. Estas pruebas no convierten el prototipo en un solver 3D general: el alcance actual es exclusivamente calor estacionario en prismas tetraedralizados.
+Las pruebas `scalar3d.test.ts`, `heat3d.test.ts`, `transient3d.test.ts`, `electrostatics3d.test.ts`, `elasticity3d.test.ts` y `heat3d.integration.test.ts` comprueban:
+
+- Volumen total, gradientes P1, caras externas y ausencia de caras externas en una interfaz multidominio.
+- Campos afines XYZ, flujo/campo eléctrico uniforme, cargas parabólicas y continuidad del desplazamiento eléctrico normal entre permitividades distintas.
+- Convergencia espacial hacia la solución transitoria 2D equivalente al refinar Z y reducción del error temporal al dividir el paso.
+- Tracción uniaxial con contracción lateral, tracción sobre front/back, deformación piecewise con dos módulos elásticos y dilatación térmica libre sin tensión residual. Los apoyos uniaxiales usan rodillos para no impedir la contracción lateral.
+- Integración volumétrica, exportación CSV/VTK con Z y `uz`, convergencia uniforme XYZ para los tres modelos y rechazo de adaptación local 3D.
+
+El ensayo de navegador abre el bloque 3D de tres capas, edita profundidad/Z y divisiones Z, calcula calor estacionario y transitorio, electrostática y elasticidad, cambia condiciones front/back, visualiza todas las magnitudes, ejecuta convergencia y verifica descargas y round-trip JSON v11. El visor de resultados muestra valores nodales P1 o valores elementales constantes sobre la superficie externa, con navegación orbital y modo alámbrico. Estas pruebas verifican casos concretos; no constituyen validación industrial ni un solver 3D general.
 
 ## Geometría, persistencia y navegador
 
-La suite también comprueba importación/normalización SVG/CSV, rechazo de auto-intersecciones, refinamiento rojo, campos afines en mallas no estructuradas, integración P1, sondas, barridos y exportadores. `project.test.ts` recorre migraciones aditivas v1→v10, incluidas las transiciones históricas intermedias, firmas estables y validación geométrica.
+La suite también comprueba importación/normalización SVG/CSV, rechazo de auto-intersecciones, refinamiento rojo, campos afines en mallas no estructuradas, integración P1, sondas, barridos y exportadores. `project.test.ts` recorre migraciones aditivas v1→v11, incluidas las transiciones históricas intermedias, los nuevos valores front/back y `bodyForceZ`, firmas estables y validación geométrica.
 
 El ensayo de navegador cubre Worker, invalidación de respuestas obsoletas, ambos solvers, IC(0), RCM/natural, ecuación personalizada, error exacto, adaptación, transitorios, polígonos, geometría multidominio conectada y disjunta, edición de materiales por dominio, elasticidad, barridos y descargas. También verifica las pestañas de flujo de trabajo, plegado y expansión del árbol, selección de dominios desde el SVG, apertura de fronteras desde Graphics, los controles reales de zoom/ajuste y los visores 3D. En PIN y PN edita nombre de dominio, bounding box, área activa, permitividad y potencial; después recalcula, ejecuta convergencia y realiza un barrido de polarización. Las capturas se guardan fuera del repositorio y el servidor temporal se detiene.
 
 ## Aplicación de escritorio y release
 
-`desktop/main.cjs` carga exclusivamente los archivos locales compilados, con Node Integration desactivado, aislamiento de contexto y sandbox. `scripts/validate-desktop.mjs` abre la aplicación mediante Electron, comprueba versión y modo empaquetado, ejecuta cálculos en el Worker, carga el preset multidominio, edita/recalcula la plantilla PIN y ejecuta el preset térmico 3D comprobando el resultado tetraédrico. La prueba se ejecuta también contra el binario empaquetado antes de publicar cada release.
+`desktop/main.cjs` carga exclusivamente los archivos locales compilados, con Node Integration desactivado, aislamiento de contexto y sandbox. `scripts/validate-desktop.mjs` abre la aplicación mediante Electron, comprueba versión y modo empaquetado, ejecuta cálculos en el Worker, carga el preset multidominio, edita/recalcula la plantilla PIN y calcula el bloque 3D con calor estacionario/transitorio, electrostática y elasticidad. La prueba se ejecuta también contra el binario empaquetado antes de publicar cada release.
 
 El workflow de GitHub Actions separa la verificación y el empaquetado Windows. Solo un push a `main` cuya verificación haya pasado puede actualizar la release continua `latest`; los pull requests no la modifican. La concurrencia cancela builds obsoletos de una misma rama para evitar que un push anterior sobrescriba otro más reciente. El nombre estable `OpenPhysics-Studio-Windows-x64.exe` permite reemplazar siempre el mismo asset, junto con su checksum SHA-256, sin acumular ejecutables antiguos en la release continua.
 
@@ -125,8 +131,8 @@ El paquete comunitario no está firmado digitalmente y no contiene actualizador 
 ## Límites actuales
 
 - Hasta 16 dominios poligonales, cada uno con un material isotrópico. Se usan triángulos P1 en 2D y tetraedros P1 en extrusiones 3D. Las interfaces deben compartir aristas completas coincidentes; no hay particionado automático de geometrías.
-- La geometría 3D se limita a extrusiones prismáticas y el único solver 3D es conducción térmica estacionaria. Sin CAD 3D general, agujeros, curvas, axisimetría, elementos de orden superior, adaptación local 3D ni h/p adaptativo.
-- Electrostática, elasticidad, acoplamiento y ecuación personalizada permanecen en 2D. El acoplamiento térmico–estructural es unidireccional y estacionario.
+- La geometría 3D se limita a extrusiones prismáticas. Los modelos 3D disponibles son calor estacionario/transitorio, electrostática y elasticidad lineal estacionaria. Sin CAD 3D general, agujeros, curvas, axisimetría, elementos de orden superior, adaptación local 3D ni h/p adaptativo.
+- La ecuación personalizada permanece en 2D. El acoplamiento térmico–estructural 2D/3D es unidireccional y estacionario.
 - Ecuación personalizada de coeficientes constantes; sin parser de expresiones ni plugins. Las referencias manufacturadas se limitan a un dominio 2D.
 - Sin no linealidad, contacto, dinámica estructural, autovalores, frecuencia, CFD o sistemas algebraicos generales.
 - Un Web Worker secuencial; sin paralelismo multinúcleo ni cancelación inmediata.
